@@ -222,10 +222,33 @@ Dictionary GDScriptSyntaxHighlighter::_get_line_syntax_highlighting_impl(int p_l
 					color_map[j] = highlighter_info;
 
 					if (color_regions[in_region].is_comment) {
+						// Block comments (e.g. `/* ... */`) end at their end key and can span multiple lines.
+						// Line comments (e.g. `#`) go until the end of the line.
+						const int end_key_length = color_regions[in_region].end_key.length();
+						const bool is_block_comment = !color_regions[in_region].line_only && end_key_length > 0;
+						int region_end_index = -1;
+						if (is_block_comment) {
+							const char32_t *end_key = color_regions[in_region].end_key.get_data();
+							for (int i = from; i + end_key_length <= line_length; i++) {
+								bool match = true;
+								for (int k = 0; k < end_key_length; k++) {
+									if (end_key[k] != str[i + k]) {
+										match = false;
+										break;
+									}
+								}
+								if (match) {
+									region_end_index = i;
+									break;
+								}
+							}
+						}
+						const int comment_end = region_end_index != -1 ? region_end_index : line_length;
+
 						int marker_start_pos = from;
 						int marker_len = 0;
-						while (from <= line_length) {
-							if (from < line_length && is_unicode_identifier_continue(str[from])) {
+						while (from <= comment_end) {
+							if (from < comment_end && is_unicode_identifier_continue(str[from])) {
 								marker_len++;
 							} else {
 								if (marker_len > 0) {
@@ -245,8 +268,16 @@ Dictionary GDScriptSyntaxHighlighter::_get_line_syntax_highlighting_impl(int p_l
 							}
 							from++;
 						}
-						from = line_length - 1;
-						j = from;
+						if (region_end_index != -1) {
+							// The comment ends on this line, continue highlighting after the end key.
+							j = region_end_index + end_key_length - 1;
+						} else {
+							if (is_block_comment) {
+								color_region_cache[p_line] = in_region; // Continues on the next line.
+							}
+							from = line_length - 1;
+							j = from;
+						}
 					} else {
 						// Search the line.
 						int region_end_index = -1;
