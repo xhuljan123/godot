@@ -204,6 +204,15 @@ GDScriptDataType GDScriptCompiler::_gdtype_from_datatype(const GDScriptParser::D
 		result.set_container_element_type(i, _gdtype_from_datatype(p_datatype.get_container_element_type_or_variant(i), p_owner, false));
 	}
 
+	if (p_datatype.is_struct_type() && result.kind == GDScriptDataType::BUILTIN && result.builtin_type == Variant::DICTIONARY) {
+		result.is_struct = true;
+		for (int i = 0; i < p_datatype.struct_keys.size(); i++) {
+			result.struct_keys.push_back(p_datatype.struct_keys[i]);
+			result.struct_key_types.push_back(_gdtype_from_datatype(p_datatype.struct_key_types[i], p_owner, false));
+			result.struct_key_optional.push_back(p_datatype.struct_key_optional[i]);
+		}
+	}
+
 	return result;
 }
 
@@ -835,10 +844,19 @@ GDScriptCodeGenerator::Address GDScriptCompiler::_parse_expression(CodeGen &code
 				}
 			}
 
+			// Struct values are untyped dictionaries at runtime, so a typed key read must be checked (and converted if needed).
+			const bool is_struct_access = subscript->base->type_constraint.is_struct_type() && result.type.has_type();
+			GDScriptCodeGenerator::Address raw_value = is_struct_access ? codegen.add_temporary() : result;
+
 			if (named) {
-				gen->write_get_named(result, name, base);
+				gen->write_get_named(raw_value, name, base);
 			} else {
-				gen->write_get(result, index, base);
+				gen->write_get(raw_value, index, base);
+			}
+
+			if (is_struct_access) {
+				gen->write_assign_with_conversion(result, raw_value);
+				gen->pop_temporary();
 			}
 
 			if (index.mode == GDScriptCodeGenerator::Address::TEMPORARY) {
@@ -1104,7 +1122,9 @@ GDScriptCodeGenerator::Address GDScriptCompiler::_parse_expression(CodeGen &code
 						break;
 					}
 					const GDScriptParser::SubscriptNode *subscript_elem = E->get();
-					GDScriptCodeGenerator::Address value = codegen.add_temporary(_gdtype_from_datatype(subscript_elem->type_constraint, codegen.script));
+					// Values read from a struct are not guaranteed to have the declared type, so keep them untyped here.
+					const bool from_struct = subscript_elem->base->type_constraint.is_struct_type();
+					GDScriptCodeGenerator::Address value = codegen.add_temporary(from_struct ? GDScriptDataType() : _gdtype_from_datatype(subscript_elem->type_constraint, codegen.script));
 					GDScriptCodeGenerator::Address key;
 					StringName name;
 
@@ -1144,7 +1164,8 @@ GDScriptCodeGenerator::Address GDScriptCompiler::_parse_expression(CodeGen &code
 				// Perform operator if any.
 				if (assignment->operation != GDScriptParser::AssignmentNode::OP_NONE) {
 					GDScriptCodeGenerator::Address op_result = codegen.add_temporary(_gdtype_from_datatype(assignment->type_constraint, codegen.script));
-					GDScriptCodeGenerator::Address value = codegen.add_temporary(_gdtype_from_datatype(subscript->type_constraint, codegen.script));
+					const bool from_struct = subscript->base->type_constraint.is_struct_type();
+					GDScriptCodeGenerator::Address value = codegen.add_temporary(from_struct ? GDScriptDataType() : _gdtype_from_datatype(subscript->type_constraint, codegen.script));
 					if (subscript->is_attribute) {
 						gen->write_get_named(value, name, prev_base);
 					} else {

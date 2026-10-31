@@ -2922,6 +2922,8 @@ GDScriptLanguage::GDScriptLanguage() {
 	track_call_stack = true;
 	track_locals = track_locals || EngineDebugger::is_active();
 
+	// Prevent running/exporting the project from the editor when a GDScript file has errors.
+	GLOBAL_DEF("debug/gdscript/block_run_on_errors", true);
 	GLOBAL_DEF("debug/gdscript/warnings/enable", true);
 
 	GLOBAL_DEF(PropertyInfo(Variant::DICTIONARY,

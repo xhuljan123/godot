@@ -1,0 +1,15 @@
+GDTEST_ANALYZER_ERROR
+>> ERROR at line 2: Key "key3" does not exist in struct type "Struct[{ key1: String, key2: int }]".
+>> ERROR at line 3: Cannot assign a value of type "int" as "String".
+>> ERROR at line 3: Value of type "int" cannot be assigned to a variable of type "String".
+>> ERROR at line 6: Cannot return value of type "Struct[{ a: int, b?: int }]" because the function return type is "Struct[{ a: int, b: int }]". Key "b" is required but optional in the source type.
+>> ERROR at line 9: Missing required key "key2" for struct type "Struct[{ key1: String, key2: int }]".
+>> ERROR at line 10: Cannot assign a value of type "int" to key "key1" of type "String".
+>> ERROR at line 11: Key "key3" does not exist in struct type "Struct[{ key1: String, key2: int }]".
+>> ERROR at line 12: Cannot assign a value of type "String" to key "x" of type "float".
+>> ERROR at line 14: Invalid argument for "foo()" function: argument 1 should be "Struct[{ key1: String, key2: int }]" but is "Struct[{ key1: String }]". Key "key2" is required but missing.
+>> ERROR at line 16: Keys of a literal for struct type "Struct[{ key1: String, key2: int }]" must be names or constant strings.
+>> ERROR at line 16: Missing required key "key1" for struct type "Struct[{ key1: String, key2: int }]".
+>> ERROR at line 17: Struct types cannot be used with the "is" operator. Test for "Dictionary" and check its keys with "has()" instead.
+>> ERROR at line 19: Identifier "undefined_identifier" not declared in the current scope.
+>> ERROR at line 20: Identifier "undefined_key" not declared in the current scope.

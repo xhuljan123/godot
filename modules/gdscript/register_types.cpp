@@ -59,8 +59,13 @@
 #include "core/object/class_db.h"
 
 #ifdef TOOLS_ENABLED
+#include "gdscript_analyzer.h"
+#include "gdscript_parser.h"
+
+#include "core/config/project_settings.h"
 #include "editor/editor_node.h"
 #include "editor/export/editor_export.h"
+#include "editor/file_system/editor_file_system.h"
 #include "editor/translations/editor_translation_parser.h"
 
 #ifndef GDSCRIPT_NO_LSP
@@ -81,6 +86,91 @@ GDScriptCache *gdscript_cache = nullptr;
 
 Ref<GDScriptEditorTranslationParserPlugin> gdscript_translation_parser_plugin;
 
+// Validation of every GDScript file of the project, so the project isn't run or exported with script errors
+// (including typing errors such as invalid `Struct[...]` usage). Controlled by `debug/gdscript/block_run_on_errors`.
+struct GDScriptProjectError {
+	String path;
+	int line = 0;
+	int column = 0;
+	String message;
+};
+
+static void _collect_gdscript_files(EditorFileSystemDirectory *p_dir, Vector<String> &r_paths) {
+	if (p_dir == nullptr) {
+		return;
+	}
+	for (int i = 0; i < p_dir->get_file_count(); i++) {
+		const String path = p_dir->get_file_path(i);
+		if (path.get_extension() == "gd") {
+			r_paths.push_back(path);
+		}
+	}
+	for (int i = 0; i < p_dir->get_subdir_count(); i++) {
+		_collect_gdscript_files(p_dir->get_subdir(i), r_paths);
+	}
+}
+
+static Vector<GDScriptProjectError> _validate_project_gdscripts() {
+	Vector<GDScriptProjectError> result;
+	if (EditorFileSystem::get_singleton() == nullptr) {
+		return result;
+	}
+
+	Vector<String> paths;
+	_collect_gdscript_files(EditorFileSystem::get_singleton()->get_filesystem(), paths);
+
+	for (const String &path : paths) {
+		Error read_error = OK;
+		const String source = FileAccess::get_file_as_string(path, &read_error);
+		if (read_error != OK) {
+			continue;
+		}
+
+		GDScriptParser parser;
+		Error err = parser.parse(source, path, false);
+		if (err == OK) {
+			GDScriptAnalyzer analyzer(&parser);
+			err = analyzer.analyze();
+		}
+		if (err == OK) {
+			continue;
+		}
+		for (const GDScriptParser::ParserError &error : parser.get_errors()) {
+			GDScriptProjectError project_error;
+			project_error.path = path;
+			project_error.line = error.start_line;
+			project_error.column = error.start_column;
+			project_error.message = error.message;
+			result.push_back(project_error);
+		}
+	}
+	return result;
+}
+
+static bool _gdscript_build_callback() {
+	if (!GLOBAL_GET("debug/gdscript/block_run_on_errors")) {
+		return true;
+	}
+
+	const Vector<GDScriptProjectError> errors = _validate_project_gdscripts();
+	if (errors.is_empty()) {
+		return true;
+	}
+
+	for (const GDScriptProjectError &error : errors) {
+		print_error(vformat("%s:%d:%d - GDScript error: %s", error.path, error.line, error.column, error.message));
+	}
+
+	const GDScriptProjectError &first = errors[0];
+	Ref<Script> first_script = ResourceLoader::load(first.path, "Script");
+	if (first_script.is_valid() && ScriptEditor::get_singleton()) {
+		ScriptEditor::get_singleton()->edit(first_script, first.line - 1, first.column - 1);
+	}
+	EditorNode::get_singleton()->show_warning(vformat(TTR("The project can't be run because %d GDScript error(s) were found.\n\nFirst error at %s:%d:\n%s\n\nSee the Output panel for the full list. This check can be disabled with the \"debug/gdscript/block_run_on_errors\" project setting."),
+			errors.size(), first.path, first.line, first.message));
+	return false;
+}
+
 class GDScriptExportPlugin : public EditorExportPlugin {
 	GDSOFTCLASS(GDScriptExportPlugin, EditorExportPlugin);
 
@@ -94,6 +184,16 @@ protected:
 		const Ref<EditorExportPreset> &preset = get_export_preset();
 		if (preset.is_valid()) {
 			script_mode = preset->get_script_export_mode();
+		}
+
+		if (GLOBAL_GET("debug/gdscript/block_run_on_errors")) {
+			const Ref<EditorExportPlatform> platform = get_export_platform();
+			if (platform.is_valid()) {
+				// Errors with the "Script errors" category abort the export (see `EditorExportPlatform::export_project_files()`).
+				for (const GDScriptProjectError &error : _validate_project_gdscripts()) {
+					platform->add_message(EditorExportPlatform::EXPORT_MESSAGE_ERROR, "Script errors", vformat("%s:%d:%d - %s", error.path, error.line, error.column, error.message));
+				}
+			}
 		}
 	}
 
@@ -122,6 +222,8 @@ public:
 };
 
 static void _editor_init() {
+	EditorNode::add_build_callback(_gdscript_build_callback);
+
 	Ref<GDScriptExportPlugin> gd_export;
 	gd_export.instantiate();
 	EditorExport::get_singleton()->add_export_plugin(gd_export);

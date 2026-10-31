@@ -45,6 +45,80 @@ bool GDScriptDataType::is_type_exact(const ContainerType &p_container_type) cons
 	}
 }
 
+String GDScriptDataType::validate_struct(const Dictionary &p_dictionary, const String &p_path) const {
+	for (int i = 0; i < struct_keys.size(); i++) {
+		const StringName &key = struct_keys[i];
+		const String path = p_path.is_empty() ? String(key) : p_path + "." + String(key);
+		const Variant *value = p_dictionary.getptr(key);
+		if (value == nullptr) {
+			if (!struct_key_optional[i]) {
+				return vformat(R"(Missing required key "%s".)", path);
+			}
+			continue;
+		}
+		const GDScriptDataType &key_type = struct_key_types[i];
+		if (key_type.is_struct_type()) {
+			if (value->get_type() != Variant::DICTIONARY) {
+				return vformat(R"(Key "%s" should be "%s" but is "%s".)", path, key_type.to_string(), Variant::get_type_name(value->get_type()));
+			}
+			const String nested_error = key_type.validate_struct(*value, path);
+			if (!nested_error.is_empty()) {
+				return nested_error;
+			}
+		} else if (!key_type.is_type(*value, true)) {
+			String value_type_name = Variant::get_type_name(value->get_type());
+			if (value->get_type() == Variant::OBJECT) {
+				Object *obj = value->get_validated_object();
+				value_type_name = obj ? String(obj->get_class()) : String("previously freed");
+			} else if (value->get_type() == Variant::ARRAY && Array(*value).is_typed()) {
+				value_type_name = "typed Array";
+			}
+			return vformat(R"(Key "%s" should be "%s" but is "%s".)", path, key_type.to_string(), value_type_name);
+		}
+	}
+	return String();
+}
+
+String GDScriptDataType::to_string() const {
+	switch (kind) {
+		case VARIANT:
+			return "Variant";
+		case BUILTIN: {
+			if (builtin_type == Variant::ARRAY && has_container_element_type(0)) {
+				return vformat("Array[%s]", container_element_types[0].to_string());
+			}
+			if (builtin_type == Variant::DICTIONARY && has_container_element_types()) {
+				return vformat("Dictionary[%s, %s]", get_container_element_type_or_variant(0).to_string(), get_container_element_type_or_variant(1).to_string());
+			}
+			if (is_struct_type()) {
+				String fields;
+				for (int i = 0; i < struct_keys.size(); i++) {
+					if (i > 0) {
+						fields += ", ";
+					}
+					fields += String(struct_keys[i]) + (struct_key_optional[i] ? "?: " : ": ") + struct_key_types[i].to_string();
+				}
+				return fields.is_empty() ? String("Struct[{}]") : vformat("Struct[{ %s }]", fields);
+			}
+			return Variant::get_type_name(builtin_type);
+		}
+		case NATIVE:
+			return native_type;
+		case SCRIPT:
+		case GDSCRIPT: {
+			if (script_type) {
+				const StringName global_name = script_type->get_global_name();
+				if (global_name != StringName()) {
+					return global_name;
+				}
+				return script_type->get_path().get_file();
+			}
+			return native_type;
+		}
+	}
+	return "Variant";
+}
+
 bool GDScriptDataType::is_type(const Variant &p_variant, bool p_allow_implicit_conversion) const {
 	switch (kind) {
 		case VARIANT: {
@@ -75,6 +149,8 @@ bool GDScriptDataType::is_type(const Variant &p_variant, bool p_allow_implicit_c
 				} else {
 					valid = false;
 				}
+			} else if (valid && is_struct_type()) {
+				valid = validate_struct(p_variant).is_empty();
 			} else if (!valid && p_allow_implicit_conversion) {
 				valid = Variant::can_convert_strict(var_type, builtin_type);
 			}
