@@ -761,6 +761,77 @@ GDScriptParser::DataType GDScriptAnalyzer::resolve_datatype(GDScriptParser::Type
 		return result;
 	}
 
+	if (p_type->struct_modifier != GDScriptParser::TypeNode::STRUCT_MODIFIER_NONE) {
+		GDScriptParser::TypeNode *argument = p_type->get_container_type_or_null(0);
+		if (argument == nullptr) {
+			return bad_type; // Error already reported by the parser.
+		}
+		const GDScriptParser::DataType argument_type = type_from_metatype(resolve_datatype(argument));
+		if (!argument_type.is_set() || (argument_type.is_variant() && !argument_type.is_hard_type())) {
+			return bad_type; // Error already reported.
+		}
+
+		if (p_type->struct_modifier == GDScriptParser::TypeNode::STRUCT_MODIFIER_PARTIAL) {
+			// `Partial[StructType]`: same keys, all optional (like `Partial<T>` in TypeScript).
+			if (!argument_type.is_struct_type()) {
+				push_error(vformat(R"("Partial" expects a struct type, but got "%s".)", argument_type.to_string()), argument);
+				return bad_type;
+			}
+			result = argument_type;
+			result.alias_name = StringName();
+			result.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
+			result.is_constant = false;
+			result.is_read_only = false;
+			for (int i = 0; i < result.struct_key_optional.size(); i++) {
+				result.struct_key_optional.write[i] = true;
+			}
+		} else {
+			// `StructFromClass[ClassType]`: a key for each (non-static) member variable of a GDScript class,
+			// including inherited ones. Variables with a default value are required, the others are optional.
+			if (argument_type.kind != GDScriptParser::DataType::CLASS || argument_type.class_type == nullptr) {
+				push_error(vformat(R"("StructFromClass" expects a GDScript class (e.g. a class extending "Resource"), but got "%s".)", argument_type.to_string()), argument);
+				return bad_type;
+			}
+			result.kind = GDScriptParser::DataType::BUILTIN;
+			result.builtin_type = Variant::DICTIONARY;
+			result.is_struct = true;
+
+			// Base classes first, so that the keys follow the declaration order.
+			List<GDScriptParser::ClassNode *> class_chain;
+			for (GDScriptParser::ClassNode *klass = argument_type.class_type; klass != nullptr;) {
+				class_chain.push_front(klass);
+				klass = klass->base_type.kind == GDScriptParser::DataType::CLASS ? klass->base_type.class_type : nullptr;
+			}
+			for (GDScriptParser::ClassNode *klass : class_chain) {
+				for (uint32_t i = 0; i < klass->members.size(); i++) {
+					if (klass->members[i].type != GDScriptParser::ClassNode::Member::VARIABLE || klass->members[i].variable->is_static) {
+						continue;
+					}
+					resolve_class_member(klass, i, p_type);
+					const GDScriptParser::VariableNode *variable = klass->members[i].variable;
+					GDScriptParser::DataType key_type = variable->type_constraint;
+					if (!key_type.is_set() || !key_type.is_hard_type() || key_type.is_resolving()) {
+						key_type = GDScriptParser::DataType::get_variant_type();
+					}
+					key_type.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
+					key_type.is_constant = false;
+					key_type.is_read_only = false;
+					const bool optional = variable->initializer == nullptr;
+					const int existing = result.find_struct_key(variable->identifier->name);
+					if (existing >= 0) {
+						result.struct_key_types.write[existing] = key_type;
+						result.struct_key_optional.write[existing] = optional;
+					} else {
+						result.add_struct_key(variable->identifier->name, key_type, optional);
+					}
+				}
+			}
+		}
+
+		p_type->resolved_type = result;
+		return result;
+	}
+
 	const GDScriptParser::IdentifierNode *first_id = p_type->type_chain[0];
 	StringName first = first_id->name;
 	bool type_found = false;

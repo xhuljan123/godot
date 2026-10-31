@@ -1301,6 +1301,14 @@ public:
 		bool is_struct = false;
 		LocalVector<StructField> struct_fields;
 
+		// Utility types that produce a struct type from another type (the argument is `container_types[0]`).
+		enum StructModifier {
+			STRUCT_MODIFIER_NONE,
+			STRUCT_MODIFIER_PARTIAL, // `Partial[StructType]`: all keys optional.
+			STRUCT_MODIFIER_FROM_CLASS, // `StructFromClass[ClassType]`: keys from the class member variables.
+		};
+		StructModifier struct_modifier = STRUCT_MODIFIER_NONE;
+
 		DataType resolved_type;
 
 		TypeNode *get_container_type_or_null(uint32_t p_index) const {
