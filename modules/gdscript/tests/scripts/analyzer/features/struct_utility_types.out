@@ -1,0 +1,9 @@
+GDTEST_OK
+foo=true bar=<null>
+foo=false bar=set
+3 [1, 2]
+GDScript <null>
+{ &"name": "a", &"size": 5, &"nested": { &"x": 1.0 } }
+{ &"name": "a", &"size": 1, &"nested": { &"x": 1.0 } }
+0
+2

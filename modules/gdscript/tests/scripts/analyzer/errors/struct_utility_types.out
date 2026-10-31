@@ -1,0 +1,7 @@
+GDTEST_ANALYZER_ERROR
+>> ERROR at line 8: Missing required key "foo" for struct type "FooData".
+>> ERROR at line 9: Key "baz" does not exist in struct type "FooData".
+>> ERROR at line 10: Cannot assign a value of type "String" to key "foo" of type "bool".
+>> ERROR at line 11: "Partial" expects a struct type, but got "int".
+>> ERROR at line 12: "StructFromClass" expects a GDScript class (e.g. a class extending "Resource"), but got "Node".
+>> ERROR at line 13: "StructFromClass" expects a GDScript class (e.g. a class extending "Resource"), but got "String".

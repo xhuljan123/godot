@@ -3934,6 +3934,29 @@ GDScriptParser::TypeNode *GDScriptParser::parse_type(bool p_allow_void) {
 		push_multiline(true);
 	}
 
+	// Utility types: `Partial[StructType]` and `StructFromClass[ClassType]`.
+	TypeNode::StructModifier struct_modifier = TypeNode::STRUCT_MODIFIER_NONE;
+	if (type_element->name == SNAME("Partial")) {
+		struct_modifier = TypeNode::STRUCT_MODIFIER_PARTIAL;
+	} else if (type_element->name == SNAME("StructFromClass")) {
+		struct_modifier = TypeNode::STRUCT_MODIFIER_FROM_CLASS;
+	}
+	if (struct_modifier != TypeNode::STRUCT_MODIFIER_NONE && check(GDScriptTokenizer::Token::BRACKET_OPEN)) {
+		push_multiline(true); // The argument can be a multiline struct type.
+		advance(); // "[".
+		type->struct_modifier = struct_modifier;
+		TypeNode *argument = parse_type(false);
+		if (argument == nullptr) {
+			push_error(vformat(R"(Expected type after "%s[".)", type_element->name));
+		} else {
+			type->container_types.push_back(argument);
+		}
+		pop_multiline();
+		consume(GDScriptTokenizer::Token::BRACKET_CLOSE, vformat(R"(Expected closing "]" after "%s" type argument.)", type_element->name));
+		complete_extents(type);
+		return type;
+	}
+
 	if (match(GDScriptTokenizer::Token::BRACKET_OPEN)) {
 		if (is_struct_type && match(GDScriptTokenizer::Token::BRACE_OPEN)) {
 			// Struct type (like `Struct[{ name: String, age?: int }]`).
@@ -4025,7 +4048,7 @@ GDScriptParser::TypeNode *GDScriptParser::parse_type(bool p_allow_void) {
 				complete_extents(type);
 				type = nullptr;
 				break;
-			} else if (container_type->container_types.size() > 0) {
+			} else if (container_type->container_types.size() > 0 && container_type->struct_modifier == TypeNode::STRUCT_MODIFIER_NONE) {
 				push_error("Nested typed collections are not supported.");
 			} else {
 				type->container_types.push_back(container_type);
