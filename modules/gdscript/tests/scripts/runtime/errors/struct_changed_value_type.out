@@ -1,0 +1,2 @@
+GDTEST_RUNTIME_ERROR
+>> SCRIPT ERROR at runtime/errors/struct_changed_value_type.gd:5 on test(): Trying to assign value of type 'String' to a variable of type 'float'.

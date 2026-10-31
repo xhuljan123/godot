@@ -1649,7 +1649,17 @@ static void _find_identifiers_in_base(const GDScriptCompletionIdentifier &p_base
 
 				int location = EditorLanguage::CompletionLocation::OTHER;
 
-				if (!p_only_functions) {
+				if (!p_only_functions && base_type.is_struct_type()) {
+					// Struct keys, in declaration order.
+					for (int i = 0; i < base_type.struct_keys.size(); i++) {
+						const String key = base_type.struct_keys[i];
+						if (!key.is_valid_ascii_identifier()) {
+							continue; // Only accessible with `["key"]`.
+						}
+						EditorLanguage::CompletionOption option(key, EditorLanguage::CompletionKind::MEMBER_VARIABLE, EditorLanguage::CompletionLocation::LOCAL + i);
+						r_result.insert(option.display, option);
+					}
+				} else if (!p_only_functions) {
 					List<PropertyInfo> members;
 					if (p_base.value.get_type() != Variant::NIL) {
 						p_base.value.get_property_list(&members);
@@ -2245,6 +2255,16 @@ static bool _guess_expression_type(GDScriptParser::CompletionContext &p_context,
 						break;
 					}
 
+					if (base.type.is_struct_type()) {
+						const int key_index = base.type.find_struct_key(subscript->attribute->name);
+						if (key_index >= 0) {
+							r_type = GDScriptCompletionIdentifier();
+							r_type.type = base.type.struct_key_types[key_index];
+							found = true;
+							break;
+						}
+					}
+
 					if (base.value.get_type() == Variant::DICTIONARY && base.value.operator Dictionary().has(String(subscript->attribute->name))) {
 						Variant value = base.value.operator Dictionary()[String(subscript->attribute->name)];
 						r_type = _type_from_variant(value, p_context);
@@ -2295,6 +2315,16 @@ static bool _guess_expression_type(GDScriptParser::CompletionContext &p_context,
 					if (!_guess_expression_type(c, subscript->index, index)) {
 						found = false;
 						break;
+					}
+
+					if (base.type.is_struct_type() && (index.value.get_type() == Variant::STRING || index.value.get_type() == Variant::STRING_NAME)) {
+						const int key_index = base.type.find_struct_key(index.value.operator StringName());
+						if (key_index >= 0) {
+							r_type = GDScriptCompletionIdentifier();
+							r_type.type = base.type.struct_key_types[key_index];
+							found = true;
+							break;
+						}
 					}
 
 					if (base.type.is_constant && index.type.is_constant) {
@@ -3694,6 +3724,29 @@ static void _find_call_arguments(GDScriptParser::CompletionContext &p_context, c
 			is_function = true;
 			[[fallthrough]];
 		case GDScriptParser::COMPLETION_IDENTIFIER: {
+			if (!is_function && completion_context.dictionary_key_of && completion_context.dictionary_key_of->style == GDScriptParser::DictionaryNode::PYTHON_DICT) {
+				const GDScriptParser::DataType &dictionary_type = completion_context.dictionary_key_of->type_constraint;
+				if (dictionary_type.is_struct_type()) {
+					// Suggest the keys of the struct that are not used yet.
+					HashSet<StringName> used_keys;
+					for (const GDScriptParser::DictionaryNode::Pair &element : completion_context.dictionary_key_of->elements) {
+						if (element.key && element.key->type == GDScriptParser::Node::IDENTIFIER && element.key != completion_context.node) {
+							used_keys.insert(static_cast<const GDScriptParser::IdentifierNode *>(element.key)->name);
+						}
+					}
+					for (int i = 0; i < dictionary_type.struct_keys.size(); i++) {
+						const StringName &key = dictionary_type.struct_keys[i];
+						if (used_keys.has(key) || !String(key).is_valid_ascii_identifier()) {
+							continue;
+						}
+						EditorLanguage::CompletionOption option(key, EditorLanguage::CompletionKind::MEMBER_VARIABLE, EditorLanguage::CompletionLocation::LOCAL + i);
+						option.insert_text = String(key) + ": ";
+						options.insert(option.display, option);
+					}
+					r_forced = true;
+					break;
+				}
+			}
 			_find_identifiers(completion_context, is_function, !_guess_expecting_callable(completion_context), options, 0);
 		} break;
 		case GDScriptParser::COMPLETION_ATTRIBUTE_METHOD:
@@ -3720,7 +3773,14 @@ static void _find_call_arguments(GDScriptParser::CompletionContext &p_context, c
 			const GDScriptParser::Node *existing_index = subscript->index;
 
 			// If the type is not known, we assume it is BUILTIN, since indices on arrays is the most common use case.
-			if (!subscript->is_attribute && (!res || base.type.kind == GDScriptParser::DataType::BUILTIN || base.type.is_variant())) {
+			if (!subscript->is_attribute && res && base.type.is_struct_type()) {
+				for (int i = 0; i < base.type.struct_keys.size(); i++) {
+					EditorLanguage::CompletionOption option = _calculate_string_insertion(existing_index, base.type.struct_keys[i]);
+					option.kind = EditorLanguage::CompletionKind::MEMBER_VARIABLE;
+					option.location = EditorLanguage::CompletionLocation::LOCAL + i;
+					options.insert(option.display, option);
+				}
+			} else if (!subscript->is_attribute && (!res || base.type.kind == GDScriptParser::DataType::BUILTIN || base.type.is_variant())) {
 				if (base.value.get_type() == Variant::DICTIONARY) {
 					List<PropertyInfo> members;
 					base.value.get_property_list(&members);

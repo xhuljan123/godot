@@ -102,6 +102,13 @@ public:
 	public:
 		Vector<DataType> container_element_types;
 
+		// Struct shape (`Struct[{ key: Type, other?: Type }]`). A struct is a `Dictionary` (BUILTIN kind)
+		// with a known set of keys. The three vectors are parallel and have the same size.
+		bool is_struct = false;
+		Vector<StringName> struct_keys;
+		Vector<DataType> struct_key_types;
+		Vector<bool> struct_key_optional;
+
 		enum Kind {
 			BUILTIN,
 			NATIVE,
@@ -203,6 +210,31 @@ public:
 
 		GDScriptParser::DataType get_typed_container_type() const;
 
+		_FORCE_INLINE_ bool is_struct_type() const { return is_struct && kind == BUILTIN && builtin_type == Variant::DICTIONARY && !is_meta_type; }
+
+		_FORCE_INLINE_ int find_struct_key(const StringName &p_key) const {
+			for (int i = 0; i < struct_keys.size(); i++) {
+				if (struct_keys[i] == p_key) {
+					return i;
+				}
+			}
+			return -1;
+		}
+
+		void add_struct_key(const StringName &p_key, const DataType &p_type, bool p_optional) {
+			is_struct = true;
+			struct_keys.push_back(p_key);
+			struct_key_types.push_back(p_type);
+			struct_key_optional.push_back(p_optional);
+		}
+
+		void clear_struct() {
+			is_struct = false;
+			struct_keys.clear();
+			struct_key_types.clear();
+			struct_key_optional.clear();
+		}
+
 		bool can_reference(const DataType &p_other) const;
 
 		bool operator==(const DataType &p_other) const {
@@ -259,6 +291,10 @@ public:
 			method_info = p_other.method_info;
 			enum_values = p_other.enum_values;
 			container_element_types = p_other.container_element_types;
+			is_struct = p_other.is_struct;
+			struct_keys = p_other.struct_keys;
+			struct_key_types = p_other.struct_key_types;
+			struct_key_optional = p_other.struct_key_optional;
 		}
 
 		DataType() = default;
@@ -1247,6 +1283,16 @@ public:
 		LocalVector<IdentifierNode *> type_chain;
 		LocalVector<TypeNode *> container_types;
 
+		// `Struct[{ key: Type, optional_key?: Type }]`.
+		struct StructField {
+			StringName name;
+			Node *key_node = nullptr; // IdentifierNode or LiteralNode, for error reporting.
+			TypeNode *type = nullptr;
+			bool optional = false;
+		};
+		bool is_struct = false;
+		LocalVector<StructField> struct_fields;
+
 		DataType resolved_type;
 
 		TypeNode *get_container_type_or_null(uint32_t p_index) const {
@@ -1373,6 +1419,7 @@ public:
 		Object *base = nullptr;
 		GDScriptParser *parser = nullptr;
 		CompletionCall call;
+		DictionaryNode *dictionary_key_of = nullptr; // Set when completing a dictionary literal key (for struct keys).
 	};
 
 private:
@@ -1440,6 +1487,7 @@ private:
 	SuiteNode *current_suite = nullptr;
 
 	CompletionContext completion_context;
+	DictionaryNode *completion_dictionary_key_of = nullptr; // Dictionary literal whose key is being parsed.
 	List<CompletionCall> completion_call_stack;
 	bool in_lambda = false;
 	bool lambda_ended = false; // Marker for when a lambda ends, to apply an end of statement if needed.

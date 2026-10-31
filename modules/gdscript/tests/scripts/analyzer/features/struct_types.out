@@ -1,0 +1,26 @@
+GDTEST_OK
+1
+2
+a
+3
+b
+4
+Ann
+Bob (42)
+not a key
+7 Hero 1.0,2.5
+["a", "b"]
+{ "hp": 10 }
+99
+1 Minimal 0.0,0.0
+[]
+10.0 8
+3.5
+10.0
+big
+6
+0.0 0.0
+1.0
+untyped
+9
+{ "dynamic": 1 }

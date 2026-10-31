@@ -1299,6 +1299,16 @@ Error EditorExportPlatform::_export_project_files(const Ref<EditorExportPreset> 
 }
 
 Error EditorExportPlatform::export_project_files(const Ref<EditorExportPreset> &p_preset, bool p_debug, SaveFileFunction p_save_func, RemoveFileFunction p_remove_func, void *p_udata, SaveSharedObjectFunction p_so_func) {
+	// Export plugins (e.g. GDScript) report script compilation errors with the "Script errors" category in `_export_begin()`.
+	// Don't produce a build of a project whose scripts don't compile.
+	for (int i = 0; i < get_message_count(); i++) {
+		const ExportMessage msg = get_message(i);
+		if (msg.msg_type == EXPORT_MESSAGE_ERROR && msg.category == "Script errors") {
+			add_message(EXPORT_MESSAGE_ERROR, TTR("Export"), TTR("Export aborted because some scripts have errors."));
+			return ERR_COMPILATION_FAILED;
+		}
+	}
+
 	//figure out paths of files that will be exported
 	HashSet<String> paths;
 	Vector<String> path_remaps;

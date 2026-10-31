@@ -118,7 +118,11 @@ void GDScriptFunction::_profile_native_call(uint64_t p_t_taken, const String &p_
 
 #endif // DEBUG_ENABLED
 
+// Argument that failed a struct type check in the last call, so the caller can report a struct-specific error.
+static thread_local const Variant *last_struct_argument_error = nullptr;
+
 #ifdef DEBUG_ENABLED
+
 String GDScriptFunction::_get_call_error(const String &p_where, const Variant **p_argptrs, int p_argcount, const Variant &p_ret, const Callable::CallError &p_err) const {
 	switch (p_err.error) {
 		case Callable::CallError::CALL_OK:
@@ -137,6 +141,11 @@ String GDScriptFunction::_get_call_error(const String &p_where, const Variant **
 			}
 			if (p_err.expected == Variant::ARRAY && p_argptrs[p_err.argument]->get_type() == p_err.expected) {
 				return "Invalid type in " + p_where + ". The array of argument " + itos(p_err.argument + 1) + " (" + _get_var_type(p_argptrs[p_err.argument]) + ") does not have the same element type as the expected typed array argument.";
+			}
+			if (p_err.expected == Variant::DICTIONARY && p_argptrs[p_err.argument] == last_struct_argument_error) {
+				// Struct shape mismatch (details were printed by the callee).
+				last_struct_argument_error = nullptr;
+				return "Invalid type in " + p_where + ". The dictionary of argument " + itos(p_err.argument + 1) + " doesn't match the expected struct type.";
 			}
 			if (p_err.expected == Variant::DICTIONARY && p_argptrs[p_err.argument]->get_type() == p_err.expected) {
 				return "Invalid type in " + p_where + ". The dictionary of argument " + itos(p_err.argument + 1) + " (" + _get_var_type(p_argptrs[p_err.argument]) + ") does not have the same element type as the expected typed dictionary argument.";
@@ -556,6 +565,13 @@ Variant GDScriptFunction::call(GDScriptInstance *p_instance, const Variant **p_a
 				continue;
 			}
 			if (!argument_types[i].is_type(*p_args[i], true)) {
+				if (argument_types[i].is_struct_type() && p_args[i]->get_type() == Variant::DICTIONARY) {
+					last_struct_argument_error = p_args[i];
+					// Explain which key doesn't match, since the generic error only mentions "Dictionary".
+					const String reason = argument_types[i].validate_struct(*p_args[i]);
+					_err_print_error(String(name).utf8().get_data(), String(source).utf8().get_data(), _initial_line,
+							vformat(R"*(Invalid argument %d for "%s()": expected "%s". %s)*", i + 1, name, argument_types[i].to_string(), reason), false, ERR_HANDLER_SCRIPT);
+				}
 				r_err.error = Callable::CallError::CALL_ERROR_INVALID_ARGUMENT;
 				r_err.argument = i;
 				r_err.expected = argument_types[i].builtin_type;
