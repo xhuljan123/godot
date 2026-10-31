@@ -1329,6 +1329,9 @@ static void _find_identifiers_in_class(const GDScriptParser::ClassNode *p_class,
 						if ((p_types_only && !member.constant->type_constraint.is_meta_type) || p_only_functions) {
 							continue;
 						}
+						if (member.constant->is_type_alias && !p_types_only) {
+							continue; // Type aliases can't be used as values.
+						}
 						if (r_result.has(member.constant->identifier->name)) {
 							continue;
 						}

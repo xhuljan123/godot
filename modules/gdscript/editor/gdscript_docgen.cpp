@@ -101,7 +101,7 @@ void GDScriptDocGen::_doctype_from_datatype(const DataType &p_datatype, String &
 			}
 			if (p_datatype.is_struct_type()) {
 				// Shown as the full struct definition (e.g. in hover tooltips), like `Struct[{ name: String, age?: int }]`.
-				r_type = p_datatype.to_string();
+				r_type = p_datatype.to_string_expanded();
 				return;
 			}
 			if (p_datatype.builtin_type == Variant::DICTIONARY && p_datatype.has_container_element_types()) {
@@ -401,9 +401,18 @@ void GDScriptDocGen::_generate_docs(GDScript *p_script, const GDP::ClassNode *p_
 
 				DocData::ConstantDoc const_doc;
 				const_doc.name = const_name;
-				const_doc.value = _docvalue_from_variant(m_const->initializer->reduced_value);
-				const_doc.is_value_valid = true;
-				_doctype_from_datatype(m_const->type_constraint, const_doc.type, const_doc.enumeration);
+				if (m_const->is_type_alias) {
+					// Type alias: documented with the aliased type as its value (e.g. `Config = Struct[{ ... }]`).
+					DataType aliased = m_const->type_constraint;
+					aliased.is_meta_type = false;
+					aliased.alias_name = StringName();
+					const_doc.value = aliased.to_string_expanded();
+					const_doc.is_value_valid = true;
+				} else {
+					const_doc.value = _docvalue_from_variant(m_const->initializer->reduced_value);
+					const_doc.is_value_valid = true;
+					_doctype_from_datatype(m_const->type_constraint, const_doc.type, const_doc.enumeration);
+				}
 				const_doc.description = m_const->doc_data.description;
 				const_doc.is_deprecated = m_const->doc_data.is_deprecated;
 				const_doc.deprecated_message = m_const->doc_data.deprecated_message;

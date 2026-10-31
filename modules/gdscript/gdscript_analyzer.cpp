@@ -720,6 +720,26 @@ GDScriptParser::DataType GDScriptAnalyzer::resolve_datatype(GDScriptParser::Type
 		result.builtin_type = Variant::DICTIONARY;
 		result.is_struct = true;
 		for (const GDScriptParser::TypeNode::StructField &field : p_type->struct_fields) {
+			if (field.is_spread) {
+				// `...Other`: copy the keys of another struct type. Later keys override earlier ones.
+				const GDScriptParser::DataType spread_type = type_from_metatype(resolve_datatype(field.type));
+				if (!spread_type.is_struct_type()) {
+					if (spread_type.is_set() && !spread_type.is_variant()) {
+						push_error(vformat(R"(Only struct types can be spread with "...", but "%s" is "%s".)", field.type->type_chain.is_empty() ? String() : String(field.type->type_chain[0]->name), spread_type.to_string_expanded()), field.type);
+					}
+					continue;
+				}
+				for (int i = 0; i < spread_type.struct_keys.size(); i++) {
+					const int existing = result.find_struct_key(spread_type.struct_keys[i]);
+					if (existing >= 0) {
+						result.struct_key_types.write[existing] = spread_type.struct_key_types[i];
+						result.struct_key_optional.write[existing] = spread_type.struct_key_optional[i];
+					} else {
+						result.add_struct_key(spread_type.struct_keys[i], spread_type.struct_key_types[i], spread_type.struct_key_optional[i]);
+					}
+				}
+				continue;
+			}
 			GDScriptParser::DataType field_type = type_from_metatype(resolve_datatype(field.type));
 			if (field_type.kind == GDScriptParser::DataType::BUILTIN && field_type.builtin_type == Variant::NIL) {
 				push_error(vformat(R"(Struct key "%s" cannot be of type "void" or "null".)", field.name), field.type);
@@ -728,7 +748,14 @@ GDScriptParser::DataType GDScriptAnalyzer::resolve_datatype(GDScriptParser::Type
 			field_type.is_constant = false;
 			field_type.is_read_only = false;
 			field_type.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
-			result.add_struct_key(field.name, field_type, field.optional);
+			const int existing = result.find_struct_key(field.name);
+			if (existing >= 0) {
+				// Overrides a key from a spread struct.
+				result.struct_key_types.write[existing] = field_type;
+				result.struct_key_optional.write[existing] = field.optional;
+			} else {
+				result.add_struct_key(field.name, field_type, field.optional);
+			}
 		}
 		p_type->resolved_type = result;
 		return result;
@@ -924,6 +951,8 @@ GDScriptParser::DataType GDScriptAnalyzer::resolve_datatype(GDScriptParser::Type
 								result = member.get_datatype();
 								found = true;
 								break;
+							} else if (member.constant->is_type_alias) {
+								return bad_type; // Unresolvable type alias (e.g. cyclic), the error was already reported.
 							} else if (Ref<Script>(member.constant->initializer->reduced_value).is_valid()) {
 								Ref<GDScript> gdscript = member.constant->initializer->reduced_value;
 								if (gdscript.is_valid()) {
@@ -1031,6 +1060,10 @@ void GDScriptAnalyzer::resolve_class_member(GDScriptParser::ClassNode *p_class, 
 	});
 
 	if (member.get_datatype().is_resolving()) {
+		if (member.type == GDScriptParser::ClassNode::Member::CONSTANT && member.constant->is_type_alias) {
+			push_error(vformat(R"(Type alias "%s" refers to itself (directly or through other type aliases).)", member.get_name()), p_source);
+			return;
+		}
 		push_error(vformat(R"(Could not resolve member "%s": Cyclic reference.)", member.get_name()), p_source);
 		return;
 	}
@@ -2333,6 +2366,22 @@ void GDScriptAnalyzer::resolve_variable(GDScriptParser::VariableNode *p_variable
 }
 
 void GDScriptAnalyzer::resolve_constant(GDScriptParser::ConstantNode *p_constant, bool p_is_local) {
+	if (p_constant->is_type_alias) {
+		// `type Name = Type`: the constant is the meta type of the aliased type.
+		GDScriptParser::DataType aliased = type_from_metatype(resolve_datatype(p_constant->datatype_specifier));
+		if (aliased.kind == GDScriptParser::DataType::BUILTIN && aliased.builtin_type == Variant::NIL) {
+			push_error(vformat(R"(Type alias "%s" cannot be "void" or "null".)", p_constant->identifier->name), p_constant->datatype_specifier);
+			aliased = GDScriptParser::DataType::get_variant_type();
+		}
+		aliased.alias_name = p_constant->identifier->name;
+		aliased.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
+		aliased.is_meta_type = true;
+		aliased.is_constant = true;
+		aliased.is_read_only = false;
+		p_constant->type_constraint = aliased;
+		return;
+	}
+
 	static constexpr const char *kind = "constant";
 	resolve_assignable(p_constant, kind);
 
@@ -2778,6 +2827,17 @@ void GDScriptAnalyzer::reduce_expression(GDScriptParser::ExpressionNode *p_expre
 		case GDScriptParser::Node::VARIABLE:
 		case GDScriptParser::Node::WHILE:
 			ERR_FAIL_MSG("Reaching unreachable case");
+	}
+
+	// Type aliases only exist at compile time, they can't be used as values.
+	const GDScriptParser::IdentifierNode *alias_identifier = nullptr;
+	if (p_expression->type == GDScriptParser::Node::IDENTIFIER) {
+		alias_identifier = static_cast<GDScriptParser::IdentifierNode *>(p_expression);
+	} else if (p_expression->type == GDScriptParser::Node::SUBSCRIPT && static_cast<GDScriptParser::SubscriptNode *>(p_expression)->is_attribute) {
+		alias_identifier = static_cast<GDScriptParser::SubscriptNode *>(p_expression)->attribute;
+	}
+	if (alias_identifier && alias_identifier->source == GDScriptParser::IdentifierNode::MEMBER_CONSTANT && alias_identifier->constant_source && alias_identifier->constant_source->is_type_alias) {
+		push_error(vformat(R"(Type alias "%s" cannot be used as a value, only as a type.)", alias_identifier->name), p_expression);
 	}
 
 	if (p_expression->type_constraint.kind == GDScriptParser::DataType::UNRESOLVED) {

@@ -253,6 +253,15 @@ void ExtendGDScriptParser::parse_class_symbol(const GDScriptParser::ClassNode *p
 				symbol.uri = uri;
 				symbol.script_path = path;
 
+				if (m.constant->is_type_alias) {
+					symbol.kind = LSP::SymbolKind::TypeParameter;
+					DataType aliased = m.constant->type_constraint;
+					aliased.is_meta_type = false;
+					symbol.detail = "type " + symbol.name + " = " + aliased.to_string_expanded();
+					r_symbol.children.push_back(symbol);
+					break;
+				}
+
 				symbol.detail = "const " + symbol.name;
 				if (m.constant->type_constraint.is_hard_type()) {
 					symbol.detail += ": " + m.constant->type_constraint.to_string();
