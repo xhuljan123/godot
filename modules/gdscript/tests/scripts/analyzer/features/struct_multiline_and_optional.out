@@ -1,0 +1,8 @@
+GDTEST_OK
+~~ WARNING at line 30: (INTEGER_DIVISION) Integer division. Decimal part will be discarded.
+d a 1.0 5
+in block
+true true
+<null>
+6
+5

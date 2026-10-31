@@ -3122,6 +3122,40 @@ bool GDScriptAnalyzer::is_struct_mismatch(const GDScriptParser::DataType &p_targ
 	return p_target.is_struct_type() && p_source.is_struct_type();
 }
 
+// Type of `value.key` when reading a struct key. Optional keys give `null` when missing, so unless the declared type
+// can hold `null` (objects, `Variant`), the result is a "weak" type: still known for completion and key checks,
+// but checked at runtime when assigned to a typed variable.
+GDScriptParser::DataType GDScriptAnalyzer::get_struct_key_read_type(const GDScriptParser::DataType &p_struct_type, int p_key_index) {
+	GDScriptParser::DataType result = p_struct_type.struct_key_types[p_key_index];
+	bool is_hard = p_struct_type.is_hard_type();
+	if (p_struct_type.struct_key_optional[p_key_index]) {
+		const bool is_nullable = result.kind == GDScriptParser::DataType::VARIANT || result.kind == GDScriptParser::DataType::NATIVE || result.kind == GDScriptParser::DataType::SCRIPT || result.kind == GDScriptParser::DataType::CLASS;
+		is_hard = is_hard && is_nullable;
+	}
+	result.type_source = is_hard ? GDScriptParser::DataType::ANNOTATED_EXPLICIT : GDScriptParser::DataType::INFERRED;
+	result.is_constant = false;
+	result.is_read_only = false;
+	return result;
+}
+
+// If `p_expression` is a struct key access (`value.key` or `value["key"]`), returns the key index in the struct type, or -1.
+int GDScriptAnalyzer::get_struct_key_index(const GDScriptParser::ExpressionNode *p_expression) {
+	if (p_expression == nullptr || p_expression->type != GDScriptParser::Node::SUBSCRIPT) {
+		return -1;
+	}
+	const GDScriptParser::SubscriptNode *subscript = static_cast<const GDScriptParser::SubscriptNode *>(p_expression);
+	if (subscript->base == nullptr || !subscript->base->type_constraint.is_struct_type()) {
+		return -1;
+	}
+	if (subscript->is_attribute) {
+		return subscript->attribute ? subscript->base->type_constraint.find_struct_key(subscript->attribute->name) : -1;
+	}
+	if (subscript->index && subscript->index->is_constant && (subscript->index->reduced_value.get_type() == Variant::STRING || subscript->index->reduced_value.get_type() == Variant::STRING_NAME)) {
+		return subscript->base->type_constraint.find_struct_key(subscript->index->reduced_value.operator StringName());
+	}
+	return -1;
+}
+
 void GDScriptAnalyzer::flush_pending_struct_key_errors() {
 	for (const KeyValue<GDScriptParser::IdentifierNode *, PendingStructKey> &E : pending_struct_key_errors) {
 		for (const GDScriptParser::ParserError &error : E.value.errors) {
@@ -3199,6 +3233,17 @@ void GDScriptAnalyzer::reduce_assignment(GDScriptParser::AssignmentNode *p_assig
 	}
 
 	GDScriptParser::DataType assignee_type = p_assignment->assignee->type_constraint;
+	{
+		// Reading an optional struct key may give `null`, but writing to it must still match the declared type.
+		const int key_index = get_struct_key_index(p_assignment->assignee);
+		if (key_index >= 0) {
+			const GDScriptParser::DataType &struct_type = static_cast<GDScriptParser::SubscriptNode *>(p_assignment->assignee)->base->type_constraint;
+			assignee_type = struct_type.struct_key_types[key_index];
+			assignee_type.type_source = struct_type.is_hard_type() ? GDScriptParser::DataType::ANNOTATED_EXPLICIT : GDScriptParser::DataType::INFERRED;
+			assignee_type.is_constant = false;
+			assignee_type.is_read_only = false;
+		}
+	}
 
 	if (assignee_type.is_constant) {
 		push_error("Cannot assign a new value to a constant.", p_assignment->assignee);
@@ -4148,18 +4193,44 @@ void GDScriptAnalyzer::reduce_dictionary(GDScriptParser::DictionaryNode *p_dicti
 				const int warning_count = parser->pending_warnings.size();
 #endif // DEBUG_ENABLED
 				reduce_expression(element.key);
+				// Only defer diagnostics located on the key itself. Resolving the identifier may analyze other
+				// members (e.g. a member variable with the same name), and their errors must not be lost.
+				const GDScriptParser::Node *key_node = element.key;
+				auto is_on_key = [key_node](int p_line, int p_column) {
+					return p_line == key_node->start_line && p_column >= key_node->start_column && p_column <= key_node->end_column;
+				};
 				PendingStructKey deferred;
 				bool has_deferred = false;
-				while (parser->errors.size() > error_count) {
-					deferred.errors.push_front(parser->errors.back()->get());
-					parser->errors.pop_back();
-					has_deferred = true;
+				{
+					List<GDScriptParser::ParserError>::Element *E = parser->errors.front();
+					for (int i = 0; i < error_count && E; i++) {
+						E = E->next();
+					}
+					while (E) {
+						List<GDScriptParser::ParserError>::Element *next = E->next();
+						if (is_on_key(E->get().start_line, E->get().start_column)) {
+							deferred.errors.push_back(E->get());
+							parser->errors.erase(E);
+							has_deferred = true;
+						}
+						E = next;
+					}
 				}
 #ifdef DEBUG_ENABLED
-				while (parser->pending_warnings.size() > warning_count) {
-					deferred.warnings.push_front(parser->pending_warnings.back()->get());
-					parser->pending_warnings.pop_back();
-					has_deferred = true;
+				{
+					List<GDScriptParser::PendingWarning>::Element *E = parser->pending_warnings.front();
+					for (int i = 0; i < warning_count && E; i++) {
+						E = E->next();
+					}
+					while (E) {
+						List<GDScriptParser::PendingWarning>::Element *next = E->next();
+						if (is_on_key(E->get().start_line, E->get().start_column)) {
+							deferred.warnings.push_back(E->get());
+							parser->pending_warnings.erase(E);
+							has_deferred = true;
+						}
+						E = next;
+					}
 				}
 #endif // DEBUG_ENABLED
 				if (has_deferred) {
@@ -5178,10 +5249,7 @@ void GDScriptAnalyzer::reduce_subscript(GDScriptParser::SubscriptNode *p_subscri
 			const int key_index = base_type.find_struct_key(p_subscript->attribute->name);
 			if (key_index >= 0) {
 				valid = true;
-				result_type = base_type.struct_key_types[key_index];
-				result_type.type_source = base_type.is_hard_type() ? GDScriptParser::DataType::ANNOTATED_EXPLICIT : GDScriptParser::DataType::INFERRED;
-				result_type.is_constant = false;
-				result_type.is_read_only = false;
+				result_type = get_struct_key_read_type(base_type, key_index);
 				p_subscript->attribute->type_constraint = result_type;
 			} else {
 				push_error(vformat(R"(Key "%s" does not exist in struct type "%s".)", p_subscript->attribute->name, base_type.to_string()), p_subscript->attribute);
@@ -5279,10 +5347,7 @@ void GDScriptAnalyzer::reduce_subscript(GDScriptParser::SubscriptNode *p_subscri
 				const StringName key = p_subscript->index->reduced_value.operator StringName();
 				const int key_index = base_type.find_struct_key(key);
 				if (key_index >= 0) {
-					result_type = base_type.struct_key_types[key_index];
-					result_type.type_source = base_type.is_hard_type() ? GDScriptParser::DataType::ANNOTATED_EXPLICIT : GDScriptParser::DataType::INFERRED;
-					result_type.is_constant = false;
-					result_type.is_read_only = false;
+					result_type = get_struct_key_read_type(base_type, key_index);
 				} else {
 					push_error(vformat(R"(Key "%s" does not exist in struct type "%s".)", key, base_type.to_string()), p_subscript->index);
 					result_type.kind = GDScriptParser::DataType::VARIANT;

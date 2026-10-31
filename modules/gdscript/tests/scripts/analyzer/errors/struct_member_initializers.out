@@ -1,0 +1,4 @@
+GDTEST_ANALYZER_ERROR
+>> ERROR at line 3: Missing required key "config" for struct type "Struct[{ config: Dictionary }]".
+>> ERROR at line 7: Cannot assign a value of type "String" as "int".
+>> ERROR at line 7: Value of type "String" cannot be assigned to a variable of type "int".

@@ -3881,11 +3881,17 @@ GDScriptParser::TypeNode *GDScriptParser::parse_type(bool p_allow_void) {
 
 	type->type_chain.push_back(type_element);
 
+	// Struct types can span multiple lines. Multiline mode must be enabled before consuming "[" and "{",
+	// otherwise the line break after them is already tokenized (with indentation) in normal mode.
+	const bool is_struct_type = type_element->name == SNAME("Struct") && check(GDScriptTokenizer::Token::BRACKET_OPEN);
+	if (is_struct_type) {
+		push_multiline(true);
+	}
+
 	if (match(GDScriptTokenizer::Token::BRACKET_OPEN)) {
-		if (type_element->name == SNAME("Struct") && match(GDScriptTokenizer::Token::BRACE_OPEN)) {
+		if (is_struct_type && match(GDScriptTokenizer::Token::BRACE_OPEN)) {
 			// Struct type (like `Struct[{ name: String, age?: int }]`).
 			type->is_struct = true;
-			push_multiline(true); // Allow struct keys to span multiple lines.
 			HashMap<StringName, int> declared_keys;
 			while (!check(GDScriptTokenizer::Token::BRACE_CLOSE) && !is_at_end()) {
 				StringName key_name;
@@ -3941,6 +3947,10 @@ GDScriptParser::TypeNode *GDScriptParser::parse_type(bool p_allow_void) {
 			consume(GDScriptTokenizer::Token::BRACKET_CLOSE, R"(Expected closing "]" after struct type.)");
 			complete_extents(type);
 			return type;
+		}
+
+		if (is_struct_type) {
+			pop_multiline(); // Not a struct after all (e.g. a class named `Struct`).
 		}
 
 		// Typed collection (like Array[int], Dictionary[String, int]).

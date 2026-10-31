@@ -1154,7 +1154,8 @@ void GDScriptTokenizerText::check_indent() {
 		char32_t current_indent_char = _peek();
 		int indent_count = 0;
 
-		if (current_indent_char != ' ' && current_indent_char != '\t' && current_indent_char != '\r' && current_indent_char != '\n' && current_indent_char != '#') {
+		const bool is_block_comment_start = current_indent_char == '/' && _peek(1) == '*';
+		if (current_indent_char != ' ' && current_indent_char != '\t' && current_indent_char != '\r' && current_indent_char != '\n' && current_indent_char != '#' && !is_block_comment_start) {
 			// First character of the line is not whitespace, so we clear all indentation levels.
 			// Unless we are in a continuation or in multiline mode (inside expression).
 			if (line_continuation || multiline_mode) {
@@ -1238,6 +1239,53 @@ void GDScriptTokenizerText::check_indent() {
 			continue;
 		}
 
+		if (_peek() == '/' && _peek(1) == '*') {
+			// Block comment at the beginning of the line.
+			if (!_skip_block_comment()) {
+				return;
+			}
+			while (_peek() == ' ' || _peek() == '\t') {
+				_advance();
+			}
+			if (_is_at_end()) {
+				pending_indents -= indent_level();
+				indent_stack.clear();
+				return;
+			}
+			if (_peek() == '\r' && _peek(1) == '\n') {
+				_advance();
+			}
+			if (_peek() == '\n') {
+				// Only a comment on the line(s), treat as empty line.
+				_advance();
+				newline(false);
+				continue;
+			}
+			if (_peek() == '#') {
+				// Followed by a line comment, also an empty line.
+				while (_peek() != '\n' && !_is_at_end()) {
+					_advance();
+				}
+				if (_is_at_end()) {
+					pending_indents -= indent_level();
+					indent_stack.clear();
+					return;
+				}
+				_advance(); // Consume '\n'.
+				newline(false);
+				continue;
+			}
+			// Code follows the comment: the indentation is the one before the comment.
+			if (indent_count == 0) {
+				if (line_continuation || multiline_mode) {
+					return;
+				}
+				pending_indents -= indent_level();
+				indent_stack.clear();
+				return;
+			}
+		}
+
 		if (mixed && !line_continuation && !multiline_mode) {
 			Token error = make_error("Mixed use of tabs and spaces for indentation.");
 			error.start_line = line;
@@ -1309,6 +1357,35 @@ String GDScriptTokenizerText::_get_indent_char_name(char32_t ch) {
 	return ch == ' ' ? "space" : "tab";
 }
 
+// Skips a `/* ... */` block comment (like in JavaScript). It behaves as whitespace and can span multiple lines.
+// Must be called with the cursor on the opening "/*". Returns false (and pushes an error) if it isn't terminated.
+bool GDScriptTokenizerText::_skip_block_comment() {
+	const int comment_start_line = line;
+	const int comment_start_column = column;
+	_advance(); // "/"
+	_advance(); // "*"
+	while (!_is_at_end()) {
+		if (_peek() == '*' && _peek(1) == '/') {
+			_advance();
+			_advance();
+			return true;
+		}
+		if (_peek() == '\n') {
+			_advance();
+			newline(false); // Lines inside the comment don't produce tokens.
+		} else {
+			_advance();
+		}
+	}
+	Token error = make_error(R"(Unterminated block comment, expected "*/".)");
+	error.start_line = comment_start_line;
+	error.start_column = comment_start_column;
+	error.end_line = comment_start_line;
+	error.end_column = comment_start_column + 2;
+	push_error(error);
+	return false;
+}
+
 void GDScriptTokenizerText::_skip_whitespace() {
 	if (pending_indents != 0) {
 		// Still have some indent/dedent tokens to give.
@@ -1360,6 +1437,14 @@ void GDScriptTokenizerText::_skip_whitespace() {
 				_advance(); // Consume '\n'
 				newline(!is_bol);
 				check_indent();
+			} break;
+			case '/': {
+				if (_peek(1) != '*') {
+					return; // Division operator.
+				}
+				if (!_skip_block_comment()) {
+					return;
+				}
 			} break;
 			default:
 				return;

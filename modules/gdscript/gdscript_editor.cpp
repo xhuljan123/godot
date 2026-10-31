@@ -80,7 +80,7 @@ static String _get_indentation() {
 }
 
 Vector<String> GDScriptLanguage::get_comment_delimiters() const {
-	static const Vector<String> delimiters = { "#" };
+	static const Vector<String> delimiters = { "#", "/* */" };
 	return delimiters;
 }
 

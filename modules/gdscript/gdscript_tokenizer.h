@@ -272,6 +272,7 @@ class GDScriptTokenizerText : public GDScriptTokenizer {
 	char32_t _advance();
 	String _get_indent_char_name(char32_t ch);
 	void _skip_whitespace();
+	bool _skip_block_comment();
 	void check_indent();
 
 #ifdef DEBUG_ENABLED

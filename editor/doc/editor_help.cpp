@@ -407,8 +407,59 @@ void EditorHelp::_class_desc_resized(bool p_force_update_theme) {
 	}
 }
 
+// Formats a GDScript struct type (`Struct[{ a: int, b: Struct[{ c: float }] }]`) for display.
+// Long definitions are split so that each top-level key is on its own line.
+static String _format_struct_type(const String &p_type) {
+	constexpr int MAX_SINGLE_LINE_LENGTH = 48;
+	const String prefix = "Struct[{";
+	const String suffix = "}]";
+	if (p_type.length() <= MAX_SINGLE_LINE_LENGTH || !p_type.begins_with(prefix) || !p_type.ends_with(suffix)) {
+		return p_type;
+	}
+	const String body = p_type.substr(prefix.length(), p_type.length() - prefix.length() - suffix.length()).strip_edges();
+	PackedStringArray keys;
+	int depth = 0;
+	bool in_string = false;
+	int start = 0;
+	for (int i = 0; i < body.length(); i++) {
+		const char32_t c = body[i];
+		if (c == '"' && (i == 0 || body[i - 1] != '\\')) {
+			in_string = !in_string;
+		} else if (!in_string) {
+			if (c == '[' || c == '{' || c == '(') {
+				depth++;
+			} else if (c == ']' || c == '}' || c == ')') {
+				depth--;
+			} else if (c == ',' && depth == 0) {
+				keys.push_back(body.substr(start, i - start).strip_edges());
+				start = i + 1;
+			}
+		}
+	}
+	keys.push_back(body.substr(start).strip_edges());
+
+	String result = prefix + "\n";
+	for (const String &key : keys) {
+		if (!key.is_empty()) {
+			result += "    " + key + ",\n";
+		}
+	}
+	return result + suffix;
+}
+
 static void _add_type_to_rt(const String &p_type, const String &p_enum, bool p_is_bitfield, RichTextLabel *p_rt, const Control *p_owner_node, const String &p_class) {
 	const Color type_color = p_owner_node->get_theme_color(SNAME("type_color"), SNAME("EditorHelp"));
+
+	if (p_enum.is_empty() && p_type.begins_with("Struct[")) {
+		// GDScript struct type: a `Dictionary` with known keys.
+		p_rt->push_color(type_color);
+		p_rt->push_meta("#Dictionary", RichTextLabel::META_UNDERLINE_ON_HOVER); // class
+		p_rt->add_text("Struct");
+		p_rt->pop(); // meta
+		p_rt->add_text(_format_struct_type(p_type).trim_prefix("Struct"));
+		p_rt->pop(); // color
+		return;
+	}
 
 	if (p_type.is_empty() || p_type == "void") {
 		p_rt->push_color(Color(type_color, 0.5));
