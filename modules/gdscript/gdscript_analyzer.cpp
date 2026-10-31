@@ -33,6 +33,7 @@
 #include "gdscript.h"
 #include "gdscript_utility_callable.h"
 #include "gdscript_utility_functions.h"
+#include "struct_ref.h"
 
 #include "core/config/engine.h"
 #include "core/config/project_settings.h"
@@ -681,6 +682,48 @@ Error GDScriptAnalyzer::resolve_class_inheritance(GDScriptParser::ClassNode *p_c
 	return err;
 }
 
+// Struct type with a key for each (non-static) member variable of a GDScript class, including inherited ones.
+// Variables with a default value are required keys, the others are optional. Used by `StructFromClass[...]` and `StructRef`.
+GDScriptParser::DataType GDScriptAnalyzer::make_struct_type_from_class(GDScriptParser::ClassNode *p_class, const GDScriptParser::Node *p_source) {
+	GDScriptParser::DataType result;
+	result.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
+	result.kind = GDScriptParser::DataType::BUILTIN;
+	result.builtin_type = Variant::DICTIONARY;
+	result.is_struct = true;
+
+	// Base classes first, so that the keys follow the declaration order.
+	List<GDScriptParser::ClassNode *> class_chain;
+	for (GDScriptParser::ClassNode *klass = p_class; klass != nullptr;) {
+		class_chain.push_front(klass);
+		klass = klass->base_type.kind == GDScriptParser::DataType::CLASS ? klass->base_type.class_type : nullptr;
+	}
+	for (GDScriptParser::ClassNode *klass : class_chain) {
+		for (uint32_t i = 0; i < klass->members.size(); i++) {
+			if (klass->members[i].type != GDScriptParser::ClassNode::Member::VARIABLE || klass->members[i].variable->is_static) {
+				continue;
+			}
+			resolve_class_member(klass, i, p_source);
+			const GDScriptParser::VariableNode *variable = klass->members[i].variable;
+			GDScriptParser::DataType key_type = variable->type_constraint;
+			if (!key_type.is_set() || !key_type.is_hard_type() || key_type.is_resolving()) {
+				key_type = GDScriptParser::DataType::get_variant_type();
+			}
+			key_type.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
+			key_type.is_constant = false;
+			key_type.is_read_only = false;
+			const bool optional = variable->initializer == nullptr;
+			const int existing = result.find_struct_key(variable->identifier->name);
+			if (existing >= 0) {
+				result.struct_key_types.write[existing] = key_type;
+				result.struct_key_optional.write[existing] = optional;
+			} else {
+				result.add_struct_key(variable->identifier->name, key_type, optional);
+			}
+		}
+	}
+	return result;
+}
+
 GDScriptParser::DataType GDScriptAnalyzer::resolve_datatype(GDScriptParser::TypeNode *p_type) {
 	GDScriptParser::DataType bad_type;
 	bad_type.kind = GDScriptParser::DataType::VARIANT;
@@ -792,40 +835,7 @@ GDScriptParser::DataType GDScriptAnalyzer::resolve_datatype(GDScriptParser::Type
 				push_error(vformat(R"("StructFromClass" expects a GDScript class (e.g. a class extending "Resource"), but got "%s".)", argument_type.to_string()), argument);
 				return bad_type;
 			}
-			result.kind = GDScriptParser::DataType::BUILTIN;
-			result.builtin_type = Variant::DICTIONARY;
-			result.is_struct = true;
-
-			// Base classes first, so that the keys follow the declaration order.
-			List<GDScriptParser::ClassNode *> class_chain;
-			for (GDScriptParser::ClassNode *klass = argument_type.class_type; klass != nullptr;) {
-				class_chain.push_front(klass);
-				klass = klass->base_type.kind == GDScriptParser::DataType::CLASS ? klass->base_type.class_type : nullptr;
-			}
-			for (GDScriptParser::ClassNode *klass : class_chain) {
-				for (uint32_t i = 0; i < klass->members.size(); i++) {
-					if (klass->members[i].type != GDScriptParser::ClassNode::Member::VARIABLE || klass->members[i].variable->is_static) {
-						continue;
-					}
-					resolve_class_member(klass, i, p_type);
-					const GDScriptParser::VariableNode *variable = klass->members[i].variable;
-					GDScriptParser::DataType key_type = variable->type_constraint;
-					if (!key_type.is_set() || !key_type.is_hard_type() || key_type.is_resolving()) {
-						key_type = GDScriptParser::DataType::get_variant_type();
-					}
-					key_type.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
-					key_type.is_constant = false;
-					key_type.is_read_only = false;
-					const bool optional = variable->initializer == nullptr;
-					const int existing = result.find_struct_key(variable->identifier->name);
-					if (existing >= 0) {
-						result.struct_key_types.write[existing] = key_type;
-						result.struct_key_optional.write[existing] = optional;
-					} else {
-						result.add_struct_key(variable->identifier->name, key_type, optional);
-					}
-				}
-			}
+			result = make_struct_type_from_class(argument_type.class_type, p_type);
 		}
 
 		p_type->resolved_type = result;
@@ -6567,6 +6577,38 @@ bool GDScriptAnalyzer::get_function_signature(GDScriptParser::Node *p_source, bo
 		if (ClassDB::get_method_info(script_class, function_name, &info)) {
 			return function_signature_from_info(info, r_return_type, r_par_types, r_default_arg_count, r_method_flags, p_source);
 		}
+	}
+
+	const bool is_struct_ref = base_native != StringName() && ClassDB::is_parent_class(base_native, StructRef::get_class_static());
+	if (is_struct_ref && (p_is_constructor || function_name == SNAME("assign"))) {
+		// `StructRef` classes without their own `_init()` are constructed from a struct of their variables
+		// (`Foo.new({ foo = 1 })`), and `assign()` takes any subset of them.
+		GDScriptParser::DataType struct_type;
+		if (p_base_type.kind == GDScriptParser::DataType::CLASS && p_base_type.class_type != nullptr) {
+			struct_type = make_struct_type_from_class(p_base_type.class_type, p_source);
+		} else {
+			struct_type.kind = GDScriptParser::DataType::BUILTIN;
+			struct_type.builtin_type = Variant::DICTIONARY;
+			struct_type.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
+		}
+		if (p_is_constructor) {
+			r_return_type = p_base_type;
+			r_return_type.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
+			r_return_type.is_meta_type = false;
+		} else {
+			for (int i = 0; i < struct_type.struct_key_optional.size(); i++) {
+				struct_type.struct_key_optional.write[i] = true; // Like `Partial[StructFromClass[Foo]]`.
+			}
+			r_return_type.kind = GDScriptParser::DataType::BUILTIN;
+			r_return_type.builtin_type = Variant::BOOL;
+			r_return_type.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
+			if (p_base_type.is_meta_type) {
+				push_error(R"*(Cannot call non-static function "assign()" on the class directly. Make an instance instead.)*", p_source);
+				return false;
+			}
+		}
+		r_par_types.push_back(struct_type);
+		return true;
 	}
 
 	if (p_is_constructor) {

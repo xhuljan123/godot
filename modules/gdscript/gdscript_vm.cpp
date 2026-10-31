@@ -121,6 +121,10 @@ void GDScriptFunction::_profile_native_call(uint64_t p_t_taken, const String &p_
 // Argument that failed a struct type check in the last call, so the caller can report a struct-specific error.
 static thread_local const Variant *last_struct_argument_error = nullptr;
 
+void GDScriptFunction::mark_struct_argument_error(const Variant *p_argument) {
+	last_struct_argument_error = p_argument;
+}
+
 #ifdef DEBUG_ENABLED
 
 String GDScriptFunction::_get_call_error(const String &p_where, const Variant **p_argptrs, int p_argcount, const Variant &p_ret, const Callable::CallError &p_err) const {

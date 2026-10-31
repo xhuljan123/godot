@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="StructRef" inherits="RefCounted" api_type="core" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../../../doc/class.xsd">
+	<brief_description>
+		Base class for script classes that can be constructed from a dictionary of their own variables.
+	</brief_description>
+	<description>
+		A [StructRef] is a [RefCounted] whose script variables can be set all at once from a [Dictionary], both when constructing it and later with [method assign].
+		If a GDScript class extending [StructRef] doesn't define its own [code]_init()[/code], its constructor takes a dictionary of its variables. The argument is statically typed as [code]StructFromClass[ThisClass][/code]: variables with a default value are required keys, the others are optional keys.
+		[codeblock]
+		class Foo extends StructRef:
+		    var foo := 1
+		    var bar: bool
+
+		func _ready():
+		    var foo := Foo.new({ foo = 22, bar = false })
+		    print(foo.foo) # Prints 22.
+		    foo.assign({ bar = true }) # Updates only "bar".
+		[/codeblock]
+		Unknown keys and values that don't match the type of their variable are reported as errors in the script editor, and at runtime when the dictionary comes from untyped code. If the class defines its own [code]_init()[/code], that constructor is used instead, and [method assign] can still be called from it.
+	</description>
+	<tutorials>
+	</tutorials>
+	<methods>
+		<method name="assign">
+			<return type="bool" />
+			<param index="0" name="data" type="Dictionary" />
+			<description>
+				Sets the script variable named by each key of [param data] to its value. In GDScript, [param data] is statically typed as [code]Partial[StructFromClass[ThisClass]][/code], so any subset of the variables can be given.
+				Returns [code]false[/code] and prints an error if a key isn't a variable of the class or a value doesn't match the variable's type. Keys before the invalid one are already assigned.
+			</description>
+		</method>
+	</methods>
+</class>

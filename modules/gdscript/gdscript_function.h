@@ -170,6 +170,9 @@ public:
 
 class GDScriptFunction {
 public:
+	// Remembers that `p_argument` failed a struct type check, so the caller reports a struct-specific error.
+	static void mark_struct_argument_error(const Variant *p_argument);
+
 	enum Opcode {
 		OPCODE_OPERATOR,
 		OPCODE_OPERATOR_VALIDATED,
