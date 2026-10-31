@@ -48,3 +48,9 @@ jobs:
             || 'HEAD~1' }}
         with:
           extra-args: --from-ref ${{ env.FROM_REF }}
+
+      - name: Report style fixes as annotation
+        if: failure()
+        run: |
+          git diff > style.diff || true
+          python3 -c "import sys; d=open('style.diff').read()[:60000]; print('::error title=Style diff::' + d.replace('%','%25').replace('\r','%0D').replace('\n','%0A'))"
