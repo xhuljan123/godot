@@ -392,6 +392,7 @@ void GDScriptParser::make_completion_context(CompletionType p_type, Node *p_node
 	context.current_argument = p_argument;
 	context.node = p_node;
 	context.parser = this;
+	context.dictionary_key_of = completion_dictionary_key_of;
 	if (!completion_call_stack.is_empty()) {
 		context.call = completion_call_stack.back()->get();
 	}
@@ -716,7 +717,7 @@ void GDScriptParser::parse_program() {
 
 #define PUSH_PENDING_ANNOTATIONS_TO_HEAD \
 	if (!annotation_stack.is_empty()) { \
-		for (AnnotationNode *annot : annotation_stack) { \
+		for (AnnotationNode * annot : annotation_stack) { \
 			head->annotations.push_back(annot); \
 		} \
 		annotation_stack.clear(); \
@@ -3276,7 +3277,10 @@ GDScriptParser::ExpressionNode *GDScriptParser::parse_dictionary(ExpressionNode 
 			}
 
 			// Key.
+			DictionaryNode *previous_dictionary_key_of = completion_dictionary_key_of;
+			completion_dictionary_key_of = dictionary;
 			ExpressionNode *key = parse_expression(false, true); // Stop on "=" so we can check for Lua table style.
+			completion_dictionary_key_of = previous_dictionary_key_of;
 
 			if (key == nullptr) {
 				push_error(R"(Expected expression as dictionary key.)");
@@ -3878,6 +3882,67 @@ GDScriptParser::TypeNode *GDScriptParser::parse_type(bool p_allow_void) {
 	type->type_chain.push_back(type_element);
 
 	if (match(GDScriptTokenizer::Token::BRACKET_OPEN)) {
+		if (type_element->name == SNAME("Struct") && match(GDScriptTokenizer::Token::BRACE_OPEN)) {
+			// Struct type (like `Struct[{ name: String, age?: int }]`).
+			type->is_struct = true;
+			push_multiline(true); // Allow struct keys to span multiple lines.
+			HashMap<StringName, int> declared_keys;
+			while (!check(GDScriptTokenizer::Token::BRACE_CLOSE) && !is_at_end()) {
+				StringName key_name;
+				Node *key_node = nullptr;
+				if (check(GDScriptTokenizer::Token::IDENTIFIER)) {
+					IdentifierNode *key_identifier = alloc_node<IdentifierNode>();
+					reset_extents(key_identifier, current);
+					key_identifier->name = current.get_identifier();
+					advance();
+					complete_extents(key_identifier);
+					key_name = key_identifier->name;
+					key_node = key_identifier;
+				} else if (check(GDScriptTokenizer::Token::LITERAL) && (current.literal.get_type() == Variant::STRING || current.literal.get_type() == Variant::STRING_NAME)) {
+					LiteralNode *key_literal = alloc_node<LiteralNode>();
+					reset_extents(key_literal, current);
+					key_literal->value = current.literal;
+					advance();
+					complete_extents(key_literal);
+					key_name = StringName(key_literal->value.operator String());
+					key_node = key_literal;
+				} else {
+					push_error(R"(Expected key name (identifier or string) in struct type.)");
+					break;
+				}
+
+				TypeNode::StructField field;
+				field.name = key_name;
+				field.key_node = key_node;
+				field.optional = match(GDScriptTokenizer::Token::QUESTION_MARK);
+
+				if (!consume(GDScriptTokenizer::Token::COLON, vformat(R"(Expected ":" after struct key "%s".)", key_name))) {
+					break;
+				}
+				field.type = parse_type(false);
+				if (field.type == nullptr) {
+					push_error(vformat(R"(Expected type for struct key "%s".)", key_name));
+					break;
+				}
+
+				if (declared_keys.has(key_name)) {
+					push_error(vformat(R"(Key "%s" is already declared in this struct type.)", key_name), key_node);
+				} else {
+					declared_keys[key_name] = type->struct_fields.size();
+					type->struct_fields.push_back(field);
+				}
+
+				if (!match(GDScriptTokenizer::Token::COMMA)) {
+					break;
+				}
+			}
+			consume(GDScriptTokenizer::Token::BRACE_CLOSE, R"(Expected closing "}" after struct type keys.)");
+			pop_multiline();
+			consume(GDScriptTokenizer::Token::BRACKET_CLOSE, R"(Expected closing "]" after struct type.)");
+			complete_extents(type);
+			return type;
+		}
+
 		// Typed collection (like Array[int], Dictionary[String, int]).
 		bool first_pass = true;
 		do {
@@ -5358,6 +5423,23 @@ String GDScriptParser::DataType::to_string() const {
 			}
 			if (builtin_type == Variant::DICTIONARY && has_container_element_types()) {
 				return vformat("Dictionary[%s, %s]", get_container_element_type_or_variant(0).to_string(), get_container_element_type_or_variant(1).to_string());
+			}
+			if (builtin_type == Variant::DICTIONARY && is_struct && !is_meta_type) {
+				if (struct_keys.is_empty()) {
+					return "Struct[{}]";
+				}
+				String fields;
+				for (int i = 0; i < struct_keys.size(); i++) {
+					if (i > 0) {
+						fields += ", ";
+					}
+					String key = struct_keys[i];
+					if (!key.is_valid_ascii_identifier()) {
+						key = key.c_escape().quote();
+					}
+					fields += key + (struct_key_optional[i] ? "?: " : ": ") + struct_key_types[i].to_string();
+				}
+				return vformat("Struct[{ %s }]", fields);
 			}
 			return Variant::get_type_name(builtin_type);
 		case NATIVE:

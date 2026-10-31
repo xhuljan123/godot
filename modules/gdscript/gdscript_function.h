@@ -47,6 +47,13 @@ class GDScriptDataType {
 public:
 	Vector<GDScriptDataType> container_element_types;
 
+	// Struct shape (`Struct[{ key: Type, other?: Type }]`), only for `Dictionary` builtin types.
+	// The three vectors are parallel and have the same size.
+	bool is_struct = false;
+	Vector<StringName> struct_keys;
+	Vector<GDScriptDataType> struct_key_types;
+	Vector<bool> struct_key_optional;
+
 	enum Kind {
 		VARIANT, // Can be any type.
 		BUILTIN,
@@ -66,6 +73,11 @@ public:
 
 	bool is_type_exact(const ContainerType &p_container_type) const;
 	bool is_type(const Variant &p_variant, bool p_allow_implicit_conversion = false) const;
+
+	_FORCE_INLINE_ bool is_struct_type() const { return is_struct && kind == BUILTIN && builtin_type == Variant::DICTIONARY; }
+	// Checks the keys and values of `p_dictionary` against the struct shape. Returns an empty string on success, or the reason of the failure.
+	String validate_struct(const Dictionary &p_dictionary, const String &p_path = String()) const;
+	String to_string() const;
 
 	bool can_contain_object() const {
 		if (kind == BUILTIN) {
@@ -125,7 +137,11 @@ public:
 				builtin_type == p_other.builtin_type &&
 				native_type == p_other.native_type &&
 				(script_type == p_other.script_type || script_type_ref == p_other.script_type_ref) &&
-				container_element_types == p_other.container_element_types;
+				container_element_types == p_other.container_element_types &&
+				is_struct == p_other.is_struct &&
+				struct_keys == p_other.struct_keys &&
+				struct_key_types == p_other.struct_key_types &&
+				struct_key_optional == p_other.struct_key_optional;
 	}
 
 	bool operator!=(const GDScriptDataType &p_other) const {
@@ -139,6 +155,10 @@ public:
 		script_type = p_other.script_type;
 		script_type_ref = p_other.script_type_ref;
 		container_element_types = p_other.container_element_types;
+		is_struct = p_other.is_struct;
+		struct_keys = p_other.struct_keys;
+		struct_key_types = p_other.struct_key_types;
+		struct_key_optional = p_other.struct_key_optional;
 	}
 
 	GDScriptDataType(const GDScriptDataType &p_other) {

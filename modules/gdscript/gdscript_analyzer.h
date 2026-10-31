@@ -56,6 +56,17 @@ class GDScriptAnalyzer {
 	HashMap<const GDScriptParser::ClassNode *, Ref<GDScriptParserRef>> external_class_parser_cache;
 	bool static_context = false;
 
+	// Bare identifier keys in dictionary literals (`{ key: value }`) that could not be resolved as expressions.
+	// They are valid if the literal is used where a `Struct[...]` is expected (TypeScript-like syntax),
+	// so their errors are only reported if that doesn't happen.
+	struct PendingStructKey {
+		List<GDScriptParser::ParserError> errors;
+#ifdef DEBUG_ENABLED
+		List<GDScriptParser::PendingWarning> warnings;
+#endif // DEBUG_ENABLED
+	};
+	HashMap<GDScriptParser::IdentifierNode *, PendingStructKey> pending_struct_key_errors;
+
 	// Tests for detecting invalid overloading of script members
 	static _FORCE_INLINE_ bool has_member_name_conflict_in_script_class(const StringName &p_name, const GDScriptParser::ClassNode *p_current_class_node, const GDScriptParser::Node *p_member);
 	static _FORCE_INLINE_ bool has_member_name_conflict_in_native_type(const StringName &p_name, const StringName &p_native_type_string);
@@ -145,6 +156,12 @@ class GDScriptAnalyzer {
 	void update_const_expression_builtin_type(GDScriptParser::ExpressionNode *p_expression, const GDScriptParser::DataType &p_type, const char *p_usage, bool p_is_cast = false);
 	void update_array_literal_element_type(GDScriptParser::ArrayNode *p_array, const GDScriptParser::DataType &p_element_type);
 	void update_dictionary_literal_element_type(GDScriptParser::DictionaryNode *p_dictionary, const GDScriptParser::DataType &p_key_element_type, const GDScriptParser::DataType &p_value_element_type);
+	void update_struct_literal(GDScriptParser::DictionaryNode *p_dictionary, const GDScriptParser::DataType &p_struct_type);
+	void update_literal_for_expected_type(GDScriptParser::ExpressionNode *p_expression, const GDScriptParser::DataType &p_expected_type);
+	static bool is_struct_compatible(const GDScriptParser::DataType &p_target, const GDScriptParser::DataType &p_source, String *r_reason = nullptr);
+	static bool is_struct_assignment_unsafe(const GDScriptParser::DataType &p_target, const GDScriptParser::DataType &p_source);
+	static bool is_struct_mismatch(const GDScriptParser::DataType &p_target, const GDScriptParser::DataType &p_source);
+	void flush_pending_struct_key_errors();
 	bool is_type_compatible(const GDScriptParser::DataType &p_target, const GDScriptParser::DataType &p_source, bool p_allow_implicit_conversion = false, const GDScriptParser::Node *p_source_node = nullptr);
 	bool is_type_compatible_strict_collections(const GDScriptParser::DataType &p_target, const GDScriptParser::DataType &p_source);
 	void push_error(const String &p_message, const GDScriptParser::Node *p_origin = nullptr) const;
