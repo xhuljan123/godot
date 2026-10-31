@@ -1,4 +1,4 @@
 GDTEST_RUNTIME_ERROR
 >> ERROR: Method/function failed. Returning: nullptr
->>   Error constructing "/home/claude/godot/modules/gdscript/tests/scripts/runtime/errors/struct_ref_constructor.gd::Foo": Cannot assign a value of type "String" to variable "foo" of type "int".
+>>   Error constructing "struct_ref_constructor.gd::Foo": Cannot assign a value of type "String" to variable "foo" of type "int".
 >> SCRIPT ERROR at runtime/errors/struct_ref_constructor.gd:7 on test(): Invalid type in function 'new' in base 'GDScript'. The dictionary of argument 1 doesn't match the expected struct type.
