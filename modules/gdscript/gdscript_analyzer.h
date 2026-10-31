@@ -162,6 +162,12 @@ class GDScriptAnalyzer {
 	static bool is_struct_assignment_unsafe(const GDScriptParser::DataType &p_target, const GDScriptParser::DataType &p_source);
 	static bool is_struct_mismatch(const GDScriptParser::DataType &p_target, const GDScriptParser::DataType &p_source);
 	void flush_pending_struct_key_errors();
+
+public:
+	static GDScriptParser::DataType get_struct_key_read_type(const GDScriptParser::DataType &p_struct_type, int p_key_index);
+	static int get_struct_key_index(const GDScriptParser::ExpressionNode *p_expression);
+
+private:
 	bool is_type_compatible(const GDScriptParser::DataType &p_target, const GDScriptParser::DataType &p_source, bool p_allow_implicit_conversion = false, const GDScriptParser::Node *p_source_node = nullptr);
 	bool is_type_compatible_strict_collections(const GDScriptParser::DataType &p_target, const GDScriptParser::DataType &p_source);
 	void push_error(const String &p_message, const GDScriptParser::Node *p_origin = nullptr) const;

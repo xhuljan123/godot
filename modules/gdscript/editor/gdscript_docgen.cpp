@@ -99,6 +99,11 @@ void GDScriptDocGen::_doctype_from_datatype(const DataType &p_datatype, String &
 					return;
 				}
 			}
+			if (p_datatype.is_struct_type()) {
+				// Shown as the full struct definition (e.g. in hover tooltips), like `Struct[{ name: String, age?: int }]`.
+				r_type = p_datatype.to_string();
+				return;
+			}
 			if (p_datatype.builtin_type == Variant::DICTIONARY && p_datatype.has_container_element_types()) {
 				String key, value;
 				_doctype_from_datatype(p_datatype.get_container_element_type_or_variant(0), key, r_enum);

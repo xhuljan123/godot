@@ -845,10 +845,17 @@ GDScriptCodeGenerator::Address GDScriptCompiler::_parse_expression(CodeGen &code
 			}
 
 			// Struct values are untyped dictionaries at runtime, so a typed key read must be checked (and converted if needed).
-			const bool is_struct_access = subscript->base->type_constraint.is_struct_type() && result.type.has_type();
+			const int struct_key_index = GDScriptAnalyzer::get_struct_key_index(subscript);
+			const bool is_struct_access = struct_key_index >= 0 && result.type.has_type();
+			// Optional keys give `null` when missing (instead of a runtime error).
+			const bool is_optional_struct_key = struct_key_index >= 0 && subscript->base->type_constraint.struct_key_optional[struct_key_index];
 			GDScriptCodeGenerator::Address raw_value = is_struct_access ? codegen.add_temporary() : result;
 
-			if (named) {
+			if (is_optional_struct_key) {
+				Vector<GDScriptCodeGenerator::Address> get_args;
+				get_args.push_back(codegen.add_constant(subscript->base->type_constraint.struct_keys[struct_key_index]));
+				gen->write_call(raw_value, base, SNAME("get"), get_args);
+			} else if (named) {
 				gen->write_get_named(raw_value, name, base);
 			} else {
 				gen->write_get(raw_value, index, base);

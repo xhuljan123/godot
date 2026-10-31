@@ -1,0 +1,6 @@
+GDTEST_OK
+~~ WARNING at line 9: (INTEGER_DIVISION) Integer division. Decimal part will be discarded.
+3
+block
+end
+/* not a comment */
