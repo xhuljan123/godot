@@ -6582,7 +6582,8 @@ bool GDScriptAnalyzer::get_function_signature(GDScriptParser::Node *p_source, bo
 	const bool is_struct_ref = base_native != StringName() && ClassDB::is_parent_class(base_native, StructRef::get_class_static());
 	if (is_struct_ref && (p_is_constructor || function_name == SNAME("assign"))) {
 		// `StructRef` classes without their own `_init()` are constructed from a struct of their variables
-		// (`Foo.new({ foo = 1 })`), and `assign()` takes any subset of them.
+		// (`Foo.new({ foo = 1 })`), and `assign()` takes any subset of them. In both cases every key is optional
+		// (like `Partial[StructFromClass[Foo]]`), and the constructor argument itself is optional too.
 		GDScriptParser::DataType struct_type;
 		if (p_base_type.kind == GDScriptParser::DataType::CLASS && p_base_type.class_type != nullptr) {
 			struct_type = make_struct_type_from_class(p_base_type.class_type, p_source);
@@ -6591,14 +6592,15 @@ bool GDScriptAnalyzer::get_function_signature(GDScriptParser::Node *p_source, bo
 			struct_type.builtin_type = Variant::DICTIONARY;
 			struct_type.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
 		}
+		for (int i = 0; i < struct_type.struct_key_optional.size(); i++) {
+			struct_type.struct_key_optional.write[i] = true;
+		}
 		if (p_is_constructor) {
 			r_return_type = p_base_type;
 			r_return_type.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
 			r_return_type.is_meta_type = false;
+			r_default_arg_count = 1; // `Foo.new()` is valid.
 		} else {
-			for (int i = 0; i < struct_type.struct_key_optional.size(); i++) {
-				struct_type.struct_key_optional.write[i] = true; // Like `Partial[StructFromClass[Foo]]`.
-			}
 			r_return_type.kind = GDScriptParser::DataType::BUILTIN;
 			r_return_type.builtin_type = Variant::BOOL;
 			r_return_type.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;

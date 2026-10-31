@@ -17,7 +17,10 @@ func test():
 	var foo := Foo.new({ foo = 22, bar = false })
 	print(foo.foo, " ", foo.bar)
 
-	# Keys of variables without a default value are optional.
+	# The argument and all of its keys are optional: missing variables keep their default value.
+	print(Foo.new().foo)
+	print(Foo.new({}).foo)
+	print(Foo.new({ bar = true }).foo)
 	print(Foo.new({ foo = 5 }).bar)
 
 	# Inherited classes include the variables of their base classes.

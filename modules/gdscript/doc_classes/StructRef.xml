@@ -5,7 +5,7 @@
 	</brief_description>
 	<description>
 		A [StructRef] is a [RefCounted] whose script variables can be set all at once from a [Dictionary], both when constructing it and later with [method assign].
-		If a GDScript class extending [StructRef] doesn't define its own [code]_init()[/code], its constructor takes a dictionary of its variables. The argument is statically typed as [code]StructFromClass[ThisClass][/code]: variables with a default value are required keys, the others are optional keys.
+		If a GDScript class extending [StructRef] doesn't define its own [code]_init()[/code], its constructor takes an optional dictionary of its variables. The argument is statically typed as [code]Partial[StructFromClass[ThisClass]][/code]: every key is optional, and variables that aren't given keep their default value.
 		[codeblock]
 		class Foo extends StructRef:
 		    var foo := 1

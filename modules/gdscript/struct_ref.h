@@ -40,8 +40,8 @@
 //
 //     var foo := Foo.new({ foo = 22, bar = false })
 //
-// For GDScript classes without their own `_init()`, the constructor argument is statically typed as
-// `StructFromClass[Foo]`, and `assign()` takes `Partial[StructFromClass[Foo]]`.
+// For GDScript classes without their own `_init()`, the constructor argument (optional) and the argument
+// of `assign()` are statically typed as `Partial[StructFromClass[Foo]]`: every key is optional.
 class StructRef : public RefCounted {
 	GDCLASS(StructRef, RefCounted);
 
