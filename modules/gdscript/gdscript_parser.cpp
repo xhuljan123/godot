@@ -1191,6 +1191,13 @@ void GDScriptParser::parse_class_body(bool p_is_multiline) {
 			case GDScriptTokenizer::Token::DEDENT:
 				class_end = true;
 				break;
+			case GDScriptTokenizer::Token::IDENTIFIER:
+				if (current.get_identifier() == SNAME("type")) {
+					// Type alias (`type Name = Type`). `type` is only a keyword here, so it can still be used as a name elsewhere.
+					parse_class_member(&GDScriptParser::parse_type_alias, AnnotationInfo::CONSTANT, "type alias");
+					break;
+				}
+				[[fallthrough]];
 			case GDScriptTokenizer::Token::LITERAL:
 				if (parse_standalone_string()) {
 					break;
@@ -1525,6 +1532,45 @@ GDScriptParser::ConstantNode *GDScriptParser::parse_constant(bool p_is_static) {
 	end_statement("constant declaration");
 
 	return constant;
+}
+
+// `type Name = Type` (the "type" identifier was already consumed).
+GDScriptParser::ConstantNode *GDScriptParser::parse_type_alias(bool p_is_static) {
+	ConstantNode *alias = alloc_node<ConstantNode>();
+	alias->is_type_alias = true;
+
+	make_completion_context(COMPLETION_DECLARATION, alias);
+
+	if (!consume(GDScriptTokenizer::Token::IDENTIFIER, R"(Expected type alias name after "type".)")) {
+		complete_extents(alias);
+		return nullptr;
+	}
+	alias->identifier = parse_identifier();
+
+	if (!consume(GDScriptTokenizer::Token::EQUAL, vformat(R"(Expected "=" after type alias name "%s".)", alias->identifier->name))) {
+		complete_extents(alias);
+		return nullptr;
+	}
+
+	alias->datatype_specifier = parse_type();
+	if (alias->datatype_specifier == nullptr) {
+		push_error(vformat(R"(Expected a type for type alias "%s".)", alias->identifier->name));
+		complete_extents(alias);
+		return nullptr;
+	}
+
+	// The alias has no runtime value. A constant `null` keeps code that expects an initializer working.
+	LiteralNode *placeholder = alloc_node<LiteralNode>();
+	placeholder->value = Variant();
+	placeholder->is_constant = true;
+	placeholder->reduced_value = Variant();
+	complete_extents(placeholder);
+	alias->initializer = placeholder;
+
+	complete_extents(alias);
+	end_statement("type alias declaration");
+
+	return alias;
 }
 
 GDScriptParser::ParameterNode *GDScriptParser::parse_parameter() {
@@ -3894,6 +3940,23 @@ GDScriptParser::TypeNode *GDScriptParser::parse_type(bool p_allow_void) {
 			type->is_struct = true;
 			HashMap<StringName, int> declared_keys;
 			while (!check(GDScriptTokenizer::Token::BRACE_CLOSE) && !is_at_end()) {
+				if (match(GDScriptTokenizer::Token::PERIOD_PERIOD_PERIOD)) {
+					// `...OtherStruct`: include the keys of another struct type (usually a type alias).
+					TypeNode::StructField spread;
+					spread.is_spread = true;
+					spread.type = parse_type(false);
+					if (spread.type == nullptr) {
+						push_error(R"(Expected struct type after "...".)");
+						break;
+					}
+					spread.key_node = spread.type;
+					type->struct_fields.push_back(spread);
+					if (!match(GDScriptTokenizer::Token::COMMA)) {
+						break;
+					}
+					continue;
+				}
+
 				StringName key_name;
 				Node *key_node = nullptr;
 				if (check(GDScriptTokenizer::Token::IDENTIFIER)) {
@@ -5421,6 +5484,13 @@ String GDScriptParser::SuiteNode::Local::get_name() const {
 }
 
 String GDScriptParser::DataType::to_string() const {
+	if (alias_name != StringName() && !is_meta_type) {
+		return alias_name;
+	}
+	return to_string_expanded();
+}
+
+String GDScriptParser::DataType::to_string_expanded() const {
 	switch (kind) {
 		case VARIANT:
 			return "Variant";

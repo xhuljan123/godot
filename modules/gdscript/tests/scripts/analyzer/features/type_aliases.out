@@ -1,0 +1,11 @@
+GDTEST_OK
+~~ WARNING at line 55: (SHADOWED_VARIABLE) The local variable "type" is shadowing an already-declared variable at line 26 in the current class.
+10
+1.5
+[1, 2, 3]
+false big 99 2
+2
+3.0
+["a", "b"]
+called
+5 type

@@ -1,0 +1,8 @@
+GDTEST_ANALYZER_ERROR
+>> ERROR at line 2: Type alias "Loop" refers to itself (directly or through other type aliases).
+>> ERROR at line 4: Type alias "A" refers to itself (directly or through other type aliases).
+>> ERROR at line 5: Only struct types can be spread with "...", but "Ids" is "Array[int]".
+>> ERROR at line 9: Missing required key "bar" for struct type "Config".
+>> ERROR at line 10: Cannot assign a value of type "String" to key "bar" of type "int".
+>> ERROR at line 11: Type alias "Config" cannot be used as a value, only as a type.
+>> ERROR at line 12: Could not find type "UnknownAlias" in the current scope.

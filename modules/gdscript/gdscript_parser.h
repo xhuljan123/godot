@@ -109,6 +109,8 @@ public:
 		Vector<DataType> struct_key_types;
 		Vector<bool> struct_key_optional;
 
+		StringName alias_name; // Set if this type comes from a type alias (`type Name = ...`). Used for display only.
+
 		enum Kind {
 			BUILTIN,
 			NATIVE,
@@ -161,7 +163,8 @@ public:
 			return ret;
 		}
 
-		String to_string() const;
+		String to_string() const; // Uses the alias name if the type comes from a type alias.
+		String to_string_expanded() const; // Always shows the full type (e.g. the struct definition of an alias).
 		_FORCE_INLINE_ String to_string_strict() const { return is_hard_type() ? to_string() : "Variant"; }
 
 		String to_property_info_hint_string() const;
@@ -295,6 +298,7 @@ public:
 			struct_keys = p_other.struct_keys;
 			struct_key_types = p_other.struct_key_types;
 			struct_key_optional = p_other.struct_key_optional;
+			alias_name = p_other.alias_name;
 		}
 
 		DataType() = default;
@@ -866,6 +870,9 @@ public:
 	};
 
 	struct ConstantNode : public AssignableNode {
+		// Type alias (`type Name = Type`). The aliased type is in `datatype_specifier`, and the
+		// constant's datatype is its meta type, so it can be used wherever a type is expected.
+		bool is_type_alias = false;
 #ifdef TOOLS_ENABLED
 		MemberDocData doc_data;
 #endif // TOOLS_ENABLED
@@ -1289,6 +1296,7 @@ public:
 			Node *key_node = nullptr; // IdentifierNode or LiteralNode, for error reporting.
 			TypeNode *type = nullptr;
 			bool optional = false;
+			bool is_spread = false; // `...OtherStruct`: copies the keys of another struct type (`type` is that struct type).
 		};
 		bool is_struct = false;
 		LocalVector<StructField> struct_fields;
@@ -1680,6 +1688,7 @@ private:
 	void parse_property_getter(VariableNode *p_variable);
 	void parse_property_setter(VariableNode *p_variable);
 	ConstantNode *parse_constant(bool p_is_static);
+	ConstantNode *parse_type_alias(bool p_is_static);
 	AssertNode *parse_assert();
 	BreakNode *parse_break();
 	ContinueNode *parse_continue();
