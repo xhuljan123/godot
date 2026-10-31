@@ -38,6 +38,7 @@
 #include "gdscript_parser.h"
 #include "gdscript_tokenizer_buffer.h"
 #include "gdscript_warning.h"
+#include "struct_ref.h"
 
 #include "core/io/resource_loader.h"
 #include "core/object/callable_mp.h"
@@ -190,6 +191,37 @@ GDScriptInstance *GDScript::_create_instance(const Variant **p_args, int p_argco
 	}
 
 	GDScriptFunction *applicable_initializer = _super_constructor(this);
+	if (applicable_initializer == nullptr && p_argcount > 0) {
+		// `StructRef` classes without their own `_init()` take a dictionary of their variables: `Foo.new({ foo = 1 })`.
+		StructRef *struct_ref = Object::cast_to<StructRef>(p_owner);
+		if (struct_ref != nullptr) {
+			String error_text;
+			if (p_argcount > 1) {
+				r_error.error = Callable::CallError::CALL_ERROR_TOO_MANY_ARGUMENTS;
+				r_error.expected = 1;
+				error_text = vformat("Expected at most 1 argument (a Dictionary of variables), but received %d.", p_argcount);
+			} else if (p_args[0]->get_type() != Variant::DICTIONARY) {
+				r_error.error = Callable::CallError::CALL_ERROR_INVALID_ARGUMENT;
+				r_error.argument = 0;
+				r_error.expected = Variant::DICTIONARY;
+				error_text = vformat(R"(Expected a Dictionary of variables, but received "%s".)", Variant::get_type_name(p_args[0]->get_type()));
+			} else {
+				error_text = struct_ref->assign_from_dictionary(*p_args[0]);
+				if (!error_text.is_empty()) {
+					r_error.error = Callable::CallError::CALL_ERROR_INVALID_ARGUMENT;
+					r_error.argument = 0;
+					r_error.expected = Variant::DICTIONARY;
+					GDScriptFunction::mark_struct_argument_error(p_args[0]); // For a struct-specific error message in the caller.
+				}
+			}
+			if (r_error.error != Callable::CallError::CALL_OK) {
+				instance->script = Ref<GDScript>();
+				// Deletes the instance, which also removes it from `instances`.
+				instance->owner->set_script_instance(nullptr);
+				ERR_FAIL_V_MSG(nullptr, vformat(R"(Error constructing "%s": %s)", fully_qualified_name, error_text));
+			}
+		}
+	}
 	if (applicable_initializer != nullptr) {
 		applicable_initializer->call(instance, p_args, p_argcount, r_error);
 		if (r_error.error != Callable::CallError::CALL_OK) {

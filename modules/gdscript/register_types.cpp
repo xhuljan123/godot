@@ -36,6 +36,7 @@
 #include "gdscript_resource_format.h"
 #include "gdscript_tokenizer_buffer.h"
 #include "gdscript_utility_functions.h"
+#include "struct_ref.h"
 
 #ifdef TOOLS_ENABLED
 #include "editor/gdscript_editor_language.h"
@@ -240,6 +241,7 @@ static void _editor_init() {
 void initialize_gdscript_module(ModuleInitializationLevel p_level) {
 	if (p_level == MODULE_INITIALIZATION_LEVEL_SERVERS) {
 		GDREGISTER_CLASS(GDScript);
+		GDREGISTER_CLASS(StructRef);
 		GDREGISTER_INTERNAL_CLASS(GDScriptFunctionState);
 
 		script_language_gd = memnew(GDScriptLanguage);

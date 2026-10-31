@@ -1,0 +1,6 @@
+GDTEST_ANALYZER_ERROR
+>> ERROR at line 6: Missing required key "foo" for struct type "Struct[{ foo: int, bar?: bool }]".
+>> ERROR at line 7: Key "baz" does not exist in struct type "Struct[{ foo: int, bar?: bool }]".
+>> ERROR at line 8: Cannot assign a value of type "String" to key "foo" of type "int".
+>> ERROR at line 10: Cannot assign a value of type "String" to key "bar" of type "bool".
+>> ERROR at line 11: Too few arguments for "new()" call. Expected at least 1 but received 0.
