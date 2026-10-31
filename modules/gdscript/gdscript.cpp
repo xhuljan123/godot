@@ -218,7 +218,9 @@ GDScriptInstance *GDScript::_create_instance(const Variant **p_args, int p_argco
 				instance->script = Ref<GDScript>();
 				// Deletes the instance, which also removes it from `instances`.
 				instance->owner->set_script_instance(nullptr);
-				ERR_FAIL_V_MSG(nullptr, vformat(R"(Error constructing "%s": %s)", fully_qualified_name, error_text));
+				// Only the file name (and inner class name), so the message doesn't depend on where the project is.
+				const String class_display_name = fully_qualified_name.get_file();
+				ERR_FAIL_V_MSG(nullptr, vformat(R"(Error constructing "%s": %s)", class_display_name, error_text));
 			}
 		}
 	}
