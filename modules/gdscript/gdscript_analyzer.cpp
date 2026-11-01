@@ -814,10 +814,14 @@ GDScriptParser::DataType GDScriptAnalyzer::resolve_datatype(GDScriptParser::Type
 			return bad_type; // Error already reported.
 		}
 
-		if (p_type->struct_modifier == GDScriptParser::TypeNode::STRUCT_MODIFIER_PARTIAL) {
+		if (p_type->struct_modifier == GDScriptParser::TypeNode::STRUCT_MODIFIER_PARTIAL || p_type->struct_modifier == GDScriptParser::TypeNode::STRUCT_MODIFIER_REQUIRED) {
 			// `Partial[StructType]`: same keys, all optional (like `Partial<T>` in TypeScript).
+			// `Required[StructType]`: same keys, all required (like `Required<T>` in TypeScript).
+			// With a second argument (`Partial[StructType, { key, other }]`), the listed keys keep their own optionality.
+			const bool is_partial = p_type->struct_modifier == GDScriptParser::TypeNode::STRUCT_MODIFIER_PARTIAL;
+			const char *modifier_name = is_partial ? "Partial" : "Required";
 			if (!argument_type.is_struct_type()) {
-				push_error(vformat(R"("Partial" expects a struct type, but got "%s".)", argument_type.to_string()), argument);
+				push_error(vformat(R"("%s" expects a struct type, but got "%s".)", modifier_name, argument_type.to_string()), argument);
 				return bad_type;
 			}
 			result = argument_type;
@@ -825,8 +829,23 @@ GDScriptParser::DataType GDScriptAnalyzer::resolve_datatype(GDScriptParser::Type
 			result.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
 			result.is_constant = false;
 			result.is_read_only = false;
+			result.struct_is_exact = false;
+
+			Vector<bool> is_excluded;
+			is_excluded.resize(result.struct_keys.size());
+			is_excluded.fill(false);
+			for (const GDScriptParser::TypeNode::StructModifierKey &excluded_key : p_type->struct_modifier_excluded_keys) {
+				const int key_index = result.find_struct_key(excluded_key.name);
+				if (key_index < 0) {
+					push_error(vformat(R"(Key "%s" does not exist in struct type "%s".)", excluded_key.name, argument_type.to_string()), excluded_key.key_node);
+					continue;
+				}
+				is_excluded.write[key_index] = true;
+			}
 			for (int i = 0; i < result.struct_key_optional.size(); i++) {
-				result.struct_key_optional.write[i] = true;
+				if (!is_excluded[i]) {
+					result.struct_key_optional.write[i] = is_partial;
+				}
 			}
 		} else {
 			// `StructFromClass[ClassType]`: a key for each (non-static) member variable of a GDScript class,

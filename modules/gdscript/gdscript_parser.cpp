@@ -3934,10 +3934,12 @@ GDScriptParser::TypeNode *GDScriptParser::parse_type(bool p_allow_void) {
 		push_multiline(true);
 	}
 
-	// Utility types: `Partial[StructType]` and `StructFromClass[ClassType]`.
+	// Utility types: `Partial[StructType]`, `Required[StructType]` and `StructFromClass[ClassType]`.
 	TypeNode::StructModifier struct_modifier = TypeNode::STRUCT_MODIFIER_NONE;
 	if (type_element->name == SNAME("Partial")) {
 		struct_modifier = TypeNode::STRUCT_MODIFIER_PARTIAL;
+	} else if (type_element->name == SNAME("Required")) {
+		struct_modifier = TypeNode::STRUCT_MODIFIER_REQUIRED;
 	} else if (type_element->name == SNAME("StructFromClass")) {
 		struct_modifier = TypeNode::STRUCT_MODIFIER_FROM_CLASS;
 	}
@@ -3950,6 +3952,47 @@ GDScriptParser::TypeNode *GDScriptParser::parse_type(bool p_allow_void) {
 			push_error(vformat(R"(Expected type after "%s[".)", type_element->name));
 		} else {
 			type->container_types.push_back(argument);
+		}
+		if (argument != nullptr && match(GDScriptTokenizer::Token::COMMA)) {
+			// `Partial[StructType, { key, other }]`: keys to exclude (they keep their own optionality).
+			if (struct_modifier == TypeNode::STRUCT_MODIFIER_FROM_CLASS) {
+				push_error(R"("StructFromClass" takes a single type argument.)");
+			} else if (consume(GDScriptTokenizer::Token::BRACE_OPEN, vformat(R"(Expected "{" with the keys to exclude after "%s[Type,".)", type_element->name))) {
+				HashSet<StringName> excluded;
+				while (!check(GDScriptTokenizer::Token::BRACE_CLOSE) && !is_at_end()) {
+					TypeNode::StructModifierKey key;
+					if (check(GDScriptTokenizer::Token::IDENTIFIER)) {
+						IdentifierNode *key_identifier = alloc_node<IdentifierNode>();
+						reset_extents(key_identifier, current);
+						key_identifier->name = current.get_identifier();
+						advance();
+						complete_extents(key_identifier);
+						key.name = key_identifier->name;
+						key.key_node = key_identifier;
+					} else if (check(GDScriptTokenizer::Token::LITERAL) && (current.literal.get_type() == Variant::STRING || current.literal.get_type() == Variant::STRING_NAME)) {
+						LiteralNode *key_literal = alloc_node<LiteralNode>();
+						reset_extents(key_literal, current);
+						key_literal->value = current.literal;
+						advance();
+						complete_extents(key_literal);
+						key.name = StringName(key_literal->value.operator String());
+						key.key_node = key_literal;
+					} else {
+						push_error(vformat(R"(Expected key name (identifier or string) in the keys to exclude of "%s".)", type_element->name));
+						break;
+					}
+					if (excluded.has(key.name)) {
+						push_error(vformat(R"(Key "%s" is already excluded.)", key.name), key.key_node);
+					} else {
+						excluded.insert(key.name);
+						type->struct_modifier_excluded_keys.push_back(key);
+					}
+					if (!match(GDScriptTokenizer::Token::COMMA)) {
+						break;
+					}
+				}
+				consume(GDScriptTokenizer::Token::BRACE_CLOSE, R"(Expected closing "}" after the keys to exclude.)");
+			}
 		}
 		pop_multiline();
 		consume(GDScriptTokenizer::Token::BRACKET_CLOSE, vformat(R"(Expected closing "]" after "%s" type argument.)", type_element->name));

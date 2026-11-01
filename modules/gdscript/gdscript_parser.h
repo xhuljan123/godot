@@ -1310,9 +1310,16 @@ public:
 		enum StructModifier {
 			STRUCT_MODIFIER_NONE,
 			STRUCT_MODIFIER_PARTIAL, // `Partial[StructType]`: all keys optional.
+			STRUCT_MODIFIER_REQUIRED, // `Required[StructType]`: all keys required.
 			STRUCT_MODIFIER_FROM_CLASS, // `StructFromClass[ClassType]`: keys from the class member variables.
 		};
 		StructModifier struct_modifier = STRUCT_MODIFIER_NONE;
+		// Keys left as they are by `Partial[StructType, { key, other }]` and `Required[StructType, { key, other }]`.
+		struct StructModifierKey {
+			StringName name;
+			Node *key_node = nullptr; // IdentifierNode or LiteralNode, for error reporting.
+		};
+		LocalVector<StructModifierKey> struct_modifier_excluded_keys;
 
 		DataType resolved_type;
 
