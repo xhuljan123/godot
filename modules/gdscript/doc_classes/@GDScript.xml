@@ -189,6 +189,25 @@
 				[b]Note:[/b] If [member ProjectSettings.editor/export/convert_text_resources_to_binary] is [code]true[/code], [method @GDScript.load] will not be able to read converted files in an exported project. If you rely on run-time loading of files present within the PCK, set [member ProjectSettings.editor/export/convert_text_resources_to_binary] to [code]false[/code].
 			</description>
 		</method>
+		<method name="mergeObjects">
+			<return type="Dictionary" />
+			<param index="0" name="defaults" type="Dictionary" />
+			<param index="1" name="overrides" type="Dictionary" />
+			<description>
+				Returns a new [Dictionary] with all the keys of [param defaults] and [param overrides]. If a key exists in both, the value from [param overrides] is used. Neither argument is modified, and the merge is shallow: nested dictionaries and arrays are not merged or copied.
+				[codeblock]
+				type Config = Struct[{ name: String, size: int }]
+				const DEFAULT_CONFIG: Config = { name: "default", size: 1 }
+
+				func make_config(options: Partial[Config]) -&gt; Config:
+					return mergeObjects(DEFAULT_CONFIG, options)
+
+				func _ready():
+					print(make_config({ size: 5 })) # Prints { &amp;"name": "default", &amp;"size": 5 }
+				[/codeblock]
+				If both arguments are structs (or dictionary literals, which are typed like with [method inferType]), the result is statically typed as a struct with the keys of both. A key that is required in [param overrides] has the type from [param overrides]. A key that is optional in [param overrides] may come from either argument, so it must have the same type in both, and it's required if it's required in [param defaults]. Otherwise, the result is an untyped [Dictionary].
+			</description>
+		</method>
 		<method name="ord">
 			<return type="int" />
 			<param index="0" name="char" type="String" />

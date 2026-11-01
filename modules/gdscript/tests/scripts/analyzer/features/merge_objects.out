@@ -1,0 +1,6 @@
+GDTEST_OK
+{ &"name": "default", &"size": 5 }
+{ &"name": "default", &"size": 1 }
+2 Y 1.0
+{ &"a": 1, &"b": "y", &"c": [1.0] }
+{ &"hp": 10 } { &"hp": 20, &"mp": 5 } { &"hp": 20, &"mp": 5 }

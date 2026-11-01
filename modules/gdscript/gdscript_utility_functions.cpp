@@ -460,6 +460,17 @@ struct GDScriptUtilityFunctionsDefinitions {
 		*r_ret = *p_args[0];
 	}
 
+	// New dictionary with the keys of both arguments. Values from the second one overwrite the first one's.
+	// The analyzer types the result when both arguments are structs (see `GDScriptAnalyzer::reduce_merge_objects_call()`).
+	static inline void mergeObjects(Variant *r_ret, const Variant **p_args, int p_arg_count, Callable::CallError &r_error) {
+		DEBUG_VALIDATE_ARG_COUNT(2, 2);
+		DEBUG_VALIDATE_ARG_TYPE(0, Variant::DICTIONARY);
+		DEBUG_VALIDATE_ARG_TYPE(1, Variant::DICTIONARY);
+		const Dictionary defaults = *p_args[0];
+		const Dictionary overrides = *p_args[1];
+		*r_ret = defaults.merged(overrides, true);
+	}
+
 	static inline void is_instance_of(Variant *r_ret, const Variant **p_args, int p_arg_count, Callable::CallError &r_error) {
 		DEBUG_VALIDATE_ARG_COUNT(2, 2);
 
@@ -598,6 +609,8 @@ void GDScriptUtilityFunctions::register_functions() {
 	REGISTER_FUNC( len,            true,  RET(INT),           ARGS( ARGVAR("var")                   ), false, varray(     ));
 	REGISTER_FUNC( is_instance_of, true,  RET(BOOL),          ARGS( ARGVAR("value"), ARGVAR("type") ), false, varray(     ));
 	REGISTER_FUNC( inferType,      false, RET(DICTIONARY),    ARGS( ARG("value", DICTIONARY)        ), false, varray(     ));
+	REGISTER_FUNC( mergeObjects,   false, RET(DICTIONARY),    ARGS( ARG("defaults", DICTIONARY),
+																	ARG("overrides", DICTIONARY)   ), false, varray(     ));
 	/* clang-format on */
 }
 

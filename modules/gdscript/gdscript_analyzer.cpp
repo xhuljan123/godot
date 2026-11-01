@@ -3357,6 +3357,105 @@ GDScriptParser::DataType GDScriptAnalyzer::reduce_infer_type_call(GDScriptParser
 	return result;
 }
 
+// Type of an argument of `mergeObjects()`. A dictionary literal whose keys are all names or constant strings
+// is typed as the struct inferred from it (like `inferType()`), any other argument keeps its own type.
+GDScriptParser::DataType GDScriptAnalyzer::reduce_object_argument(GDScriptParser::ExpressionNode *p_argument) {
+	if (p_argument == nullptr) {
+		return GDScriptParser::DataType::get_variant_type();
+	}
+	if (p_argument->type == GDScriptParser::Node::DICTIONARY) {
+		GDScriptParser::DictionaryNode *dictionary = static_cast<GDScriptParser::DictionaryNode *>(p_argument);
+		bool has_struct_keys = true;
+		for (const GDScriptParser::DictionaryNode::Pair &element : dictionary->elements) {
+			StringName key;
+			if (!get_literal_struct_key_name(dictionary, element.key, key)) {
+				has_struct_keys = false;
+				break;
+			}
+		}
+		if (has_struct_keys) {
+			update_struct_literal(dictionary, infer_struct_type_from_literal(dictionary));
+		}
+	}
+	return p_argument->type_constraint;
+}
+
+// `mergeObjects(defaults, overrides)`: a new dictionary with the keys of both, where values from `overrides` win.
+// If both arguments are structs (or dictionary literals), the result is a struct with the keys of both:
+// - A key only in one of them keeps its type and optionality.
+// - A key required in `overrides` always comes from it, so it has the type from `overrides`.
+// - A key optional in `overrides` may come from either, so both types must match. It's required if `defaults` has it required.
+// Otherwise the result is a plain `Dictionary`.
+GDScriptParser::DataType GDScriptAnalyzer::reduce_merge_objects_call(GDScriptParser::CallNode *p_call) {
+	GDScriptParser::DataType result;
+	result.kind = GDScriptParser::DataType::BUILTIN;
+	result.builtin_type = Variant::DICTIONARY;
+	result.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
+
+	if (p_call->arguments.size() != 2) {
+		if (p_call->arguments.size() < 2) {
+			push_error(vformat(R"*(Too few arguments for "mergeObjects()" call. Expected at least 2 but received %d.)*", p_call->arguments.size()), p_call);
+		} else {
+			push_error(vformat(R"*(Too many arguments for "mergeObjects()" call. Expected at most 2 but received %d.)*", p_call->arguments.size()), p_call);
+		}
+		return result;
+	}
+
+	GDScriptParser::DataType argument_types[2];
+	for (int i = 0; i < 2; i++) {
+		argument_types[i] = reduce_object_argument(p_call->arguments[i]);
+		const GDScriptParser::DataType &type = argument_types[i];
+		if (type.is_hard_type() && !type.is_variant() && !(type.kind == GDScriptParser::DataType::BUILTIN && type.builtin_type == Variant::DICTIONARY)) {
+			push_error(vformat(R"*(Invalid argument for "mergeObjects()" function: argument %d should be "Dictionary" but is "%s".)*", i + 1, type.to_string()), p_call->arguments[i]);
+			return result;
+		}
+#ifdef DEBUG_ENABLED
+		if (!type.is_hard_type() || type.is_variant()) {
+			mark_node_unsafe(p_call->arguments[i]);
+			parser->push_warning(p_call->arguments[i], GDScriptWarning::UNSAFE_CALL_ARGUMENT, itos(i + 1), "function", p_call->function_name, "Dictionary", type.to_string_strict());
+		}
+#endif // DEBUG_ENABLED
+	}
+
+	const GDScriptParser::DataType &defaults = argument_types[0];
+	const GDScriptParser::DataType &overrides = argument_types[1];
+	if (!defaults.is_struct_type() || !overrides.is_struct_type()) {
+		return result;
+	}
+
+	result.is_struct = true;
+	for (int i = 0; i < defaults.struct_keys.size(); i++) {
+		GDScriptParser::DataType key_type = defaults.struct_key_types[i];
+		key_type.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
+		result.add_struct_key(defaults.struct_keys[i], key_type, defaults.struct_key_optional[i]);
+	}
+	for (int i = 0; i < overrides.struct_keys.size(); i++) {
+		const StringName &key = overrides.struct_keys[i];
+		GDScriptParser::DataType key_type = overrides.struct_key_types[i];
+		key_type.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
+		const bool optional = overrides.struct_key_optional[i];
+		const int existing = result.find_struct_key(key);
+		if (existing < 0) {
+			result.add_struct_key(key, key_type, optional);
+			continue;
+		}
+		if (!optional) {
+			result.struct_key_types.write[existing] = key_type;
+			result.struct_key_optional.write[existing] = false;
+			continue;
+		}
+		// The value may come from either argument.
+		const GDScriptParser::DataType &default_type = result.struct_key_types[existing];
+		if (default_type.is_variant() || key_type.is_variant()) {
+			result.struct_key_types.write[existing] = GDScriptParser::DataType::get_variant_type();
+		} else if (!is_same_inferred_type(default_type, key_type)) {
+			push_error(vformat(R"*(Cannot merge key "%s": it is "%s" in the default object but "%s" in the object to merge.)*", key, default_type.to_string(), key_type.to_string()), p_call->arguments[1]);
+			result.struct_key_types.write[existing] = GDScriptParser::DataType::get_variant_type();
+		}
+	}
+	return result;
+}
+
 // Structural typing: `p_source` can be used as `p_target` if it has every required key of `p_target`
 // with compatible types. Extra keys in `p_source` are allowed, unless `p_target` is exact.
 bool GDScriptAnalyzer::is_struct_compatible(const GDScriptParser::DataType &p_target, const GDScriptParser::DataType &p_source, String *r_reason) {
@@ -4076,6 +4175,10 @@ void GDScriptAnalyzer::reduce_call(GDScriptParser::CallNode *p_call, bool p_is_a
 		} else if (function_name == SNAME("inferType") && GDScriptUtilityFunctions::function_exists(function_name)) {
 			// `inferType({ ... })`: the result is typed as a struct inferred from the dictionary literal.
 			p_call->type_constraint = reduce_infer_type_call(p_call);
+			return;
+		} else if (function_name == SNAME("mergeObjects") && GDScriptUtilityFunctions::function_exists(function_name)) {
+			// `mergeObjects(defaults, overrides)`: merging two structs gives a struct with the keys of both.
+			p_call->type_constraint = reduce_merge_objects_call(p_call);
 			return;
 		} else if (GDScriptUtilityFunctions::function_exists(function_name)) {
 			MethodInfo function_info = GDScriptUtilityFunctions::get_function_info(function_name);
