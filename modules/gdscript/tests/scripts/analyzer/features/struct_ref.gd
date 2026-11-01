@@ -35,3 +35,7 @@ func test():
 	print(WithInit.new(21).value)
 
 	print(foo is RefCounted)
+
+	# A struct value with a subset of the variables is accepted.
+	var subset: Struct[{ foo: int }] = { foo = 7 }
+	print(Foo.new(subset).foo)

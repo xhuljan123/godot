@@ -8,3 +8,7 @@ func test():
 	var foo := Foo.new({ foo = 1 })
 	foo.assign({ bar = "text" })
 	var too_many := Foo.new({}, {})
+	var other: Struct[{ test: int }] = { test = 1 }
+	var from_other := Foo.new(other)
+	var partial_match: Struct[{ foo: int, extra: String }] = { foo = 1, extra = "x" }
+	foo.assign(partial_match)

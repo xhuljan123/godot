@@ -108,6 +108,9 @@ public:
 		Vector<StringName> struct_keys;
 		Vector<DataType> struct_key_types;
 		Vector<bool> struct_key_optional;
+		// No keys other than the declared ones are accepted from another struct type (structural typing normally allows extra keys).
+		// Used for the `StructRef` constructor and `assign()`, where unknown keys are errors.
+		bool struct_is_exact = false;
 
 		StringName alias_name; // Set if this type comes from a type alias (`type Name = ...`). Used for display only.
 
@@ -236,6 +239,7 @@ public:
 			struct_keys.clear();
 			struct_key_types.clear();
 			struct_key_optional.clear();
+			struct_is_exact = false;
 		}
 
 		bool can_reference(const DataType &p_other) const;
@@ -298,6 +302,7 @@ public:
 			struct_keys = p_other.struct_keys;
 			struct_key_types = p_other.struct_key_types;
 			struct_key_optional = p_other.struct_key_optional;
+			struct_is_exact = p_other.struct_is_exact;
 			alias_name = p_other.alias_name;
 		}
 

@@ -3358,7 +3358,7 @@ GDScriptParser::DataType GDScriptAnalyzer::reduce_infer_type_call(GDScriptParser
 }
 
 // Structural typing: `p_source` can be used as `p_target` if it has every required key of `p_target`
-// with compatible types. Extra keys in `p_source` are allowed.
+// with compatible types. Extra keys in `p_source` are allowed, unless `p_target` is exact.
 bool GDScriptAnalyzer::is_struct_compatible(const GDScriptParser::DataType &p_target, const GDScriptParser::DataType &p_source, String *r_reason) {
 	for (int i = 0; i < p_target.struct_keys.size(); i++) {
 		const StringName &key = p_target.struct_keys[i];
@@ -3386,6 +3386,16 @@ bool GDScriptAnalyzer::is_struct_compatible(const GDScriptParser::DataType &p_ta
 				*r_reason = vformat(R"(Key "%s" is "%s" but should be "%s".)", key, source_type.to_string(), target_type.to_string());
 			}
 			return false;
+		}
+	}
+	if (p_target.struct_is_exact) {
+		for (int i = 0; i < p_source.struct_keys.size(); i++) {
+			if (p_target.find_struct_key(p_source.struct_keys[i]) < 0) {
+				if (r_reason) {
+					*r_reason = vformat(R"(Key "%s" does not exist in the target type.)", p_source.struct_keys[i]);
+				}
+				return false;
+			}
 		}
 	}
 	return true;
@@ -6745,6 +6755,8 @@ bool GDScriptAnalyzer::get_function_signature(GDScriptParser::Node *p_source, bo
 		for (int i = 0; i < struct_type.struct_key_optional.size(); i++) {
 			struct_type.struct_key_optional.write[i] = true;
 		}
+		// Unknown keys are runtime errors, so a struct with keys the class doesn't have is rejected statically too.
+		struct_type.struct_is_exact = struct_type.is_struct_type();
 		if (p_is_constructor) {
 			r_return_type = p_base_type;
 			r_return_type.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
