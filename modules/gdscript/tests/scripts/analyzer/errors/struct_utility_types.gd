@@ -5,8 +5,8 @@ class Foo extends Resource:
 type FooData = StructFromClass[Foo]
 
 func test():
-	var missing: FooData = { bar = "no foo" }
-	var unknown: FooData = { foo = true, baz = 1 }
+	var missing: FooData = { foo = true }
+	var unknown: FooData = { bar = "set", baz = 1 }
 	var wrong_partial: Partial[FooData] = { foo = "text" }
 	var not_a_struct: Partial[int]
 	var native_class: StructFromClass[Node]

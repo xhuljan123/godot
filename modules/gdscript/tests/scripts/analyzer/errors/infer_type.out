@@ -1,0 +1,7 @@
+GDTEST_ANALYZER_ERROR
+>> ERROR at line 6: Key "key3" does not exist in struct type "Struct[{ key1: int, key2: Array[String], name: String }]".
+>> ERROR at line 7: Cannot assign a value of type "int" as "String".
+>> ERROR at line 7: Value of type "int" cannot be assigned to a variable of type "String".
+>> ERROR at line 8: Invalid argument for "needs_flag()" function: argument 1 should be "Struct[{ flag: bool }]" but is "Struct[{ key1: int, key2: Array[String], name: String }]". Key "flag" is required but missing.
+>> ERROR at line 10: Cannot infer a struct type for "inferType()": expected a dictionary literal or a struct value, but got "Dictionary".
+>> ERROR at line 11: Too few arguments for "inferType()" call. Expected at least 1 but received 0.

@@ -1,8 +1,8 @@
 GDTEST_OK
-foo=true bar=<null>
-foo=false bar=set
+foo=<null> bar=only bar
+foo=true bar=set
 3 [1, 2]
-GDScript <null>
+<null> 42
 { &"name": "a", &"size": 5, &"nested": { &"x": 1.0 } }
 { &"name": "a", &"size": 1, &"nested": { &"x": 1.0 } }
 0

@@ -103,6 +103,20 @@
 				[b]Note:[/b] By default, backtraces are only available in editor builds and debug builds. To enable them for release builds as well, you need to enable [member ProjectSettings.debug/settings/gdscript/always_track_call_stacks].
 			</description>
 		</method>
+		<method name="inferType">
+			<return type="Dictionary" />
+			<param index="0" name="value" type="Dictionary" />
+			<description>
+				Returns [param value] unchanged, statically typed as a struct type inferred from the dictionary literal passed to it. Every key becomes a required key, and the type of each key is inferred from its value: nested dictionary literals become nested struct types, and array literals whose elements all have the same type become typed arrays.
+				[codeblock]
+				var player := inferType({ name: "Bob", hp: 10, tags: ["fast"] })
+				# `player` is typed as `Struct[{ name: String, hp: int, tags: Array[String] }]`.
+				player.hp = "full" # Error: "hp" is an int.
+				[/codeblock]
+				Values whose type isn't known at compile time (including [code]null[/code]) give [Variant] keys. Arrays that are empty, nested or have mixed element types stay untyped [Array].
+				[param value] can also be an expression that already has a struct type, which is returned with the same type. Any other argument is an error.
+			</description>
+		</method>
 		<method name="inst_to_dict" deprecated="Consider using [method JSON.from_native] or [method Object.get_property_list] instead.">
 			<return type="Dictionary" />
 			<param index="0" name="instance" type="Object" />

@@ -683,7 +683,7 @@ Error GDScriptAnalyzer::resolve_class_inheritance(GDScriptParser::ClassNode *p_c
 }
 
 // Struct type with a key for each (non-static) member variable of a GDScript class, including inherited ones.
-// Variables with a default value are required keys, the others are optional. Used by `StructFromClass[...]` and `StructRef`.
+// Variables without a default value are required keys, variables with one are optional. Used by `StructFromClass[...]` and `StructRef`.
 GDScriptParser::DataType GDScriptAnalyzer::make_struct_type_from_class(GDScriptParser::ClassNode *p_class, const GDScriptParser::Node *p_source) {
 	GDScriptParser::DataType result;
 	result.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
@@ -711,7 +711,7 @@ GDScriptParser::DataType GDScriptAnalyzer::make_struct_type_from_class(GDScriptP
 			key_type.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
 			key_type.is_constant = false;
 			key_type.is_read_only = false;
-			const bool optional = variable->initializer == nullptr;
+			const bool optional = variable->initializer != nullptr; // Has a default value, so it can be left out.
 			const int existing = result.find_struct_key(variable->identifier->name);
 			if (existing >= 0) {
 				result.struct_key_types.write[existing] = key_type;
@@ -830,7 +830,7 @@ GDScriptParser::DataType GDScriptAnalyzer::resolve_datatype(GDScriptParser::Type
 			}
 		} else {
 			// `StructFromClass[ClassType]`: a key for each (non-static) member variable of a GDScript class,
-			// including inherited ones. Variables with a default value are required, the others are optional.
+			// including inherited ones. Variables without a default value are required, the others are optional.
 			if (argument_type.kind != GDScriptParser::DataType::CLASS || argument_type.class_type == nullptr) {
 				push_error(vformat(R"("StructFromClass" expects a GDScript class (e.g. a class extending "Resource"), but got "%s".)", argument_type.to_string()), argument);
 				return bad_type;
@@ -3211,6 +3211,152 @@ void GDScriptAnalyzer::update_struct_literal(GDScriptParser::DictionaryNode *p_d
 	}
 }
 
+// Key name of a dictionary literal element, if it can be a struct key (same rules as `update_struct_literal()`).
+static bool get_literal_struct_key_name(const GDScriptParser::DictionaryNode *p_dictionary, const GDScriptParser::ExpressionNode *p_key, StringName &r_key) {
+	if (p_key == nullptr) {
+		return false;
+	}
+	if (p_dictionary->style == GDScriptParser::DictionaryNode::LUA_TABLE) {
+		r_key = p_key->reduced_value.operator StringName();
+		return true;
+	}
+	if (p_key->type == GDScriptParser::Node::IDENTIFIER) {
+		r_key = static_cast<const GDScriptParser::IdentifierNode *>(p_key)->name;
+		return true;
+	}
+	if (p_key->is_constant && (p_key->reduced_value.get_type() == Variant::STRING || p_key->reduced_value.get_type() == Variant::STRING_NAME)) {
+		r_key = p_key->reduced_value.operator StringName();
+		return true;
+	}
+	return false;
+}
+
+// Two inferred types are the same if they match exactly, including container element types and struct keys.
+static bool is_same_inferred_type(const GDScriptParser::DataType &p_a, const GDScriptParser::DataType &p_b) {
+	return p_a == p_b && p_a.to_string() == p_b.to_string();
+}
+
+// Type of a value in a literal passed to `inferType()`. Nested dictionary literals become struct types,
+// and array literals whose elements all have the same type become typed arrays.
+GDScriptParser::DataType GDScriptAnalyzer::infer_literal_value_type(GDScriptParser::ExpressionNode *p_value) {
+	if (p_value == nullptr) {
+		return GDScriptParser::DataType::get_variant_type();
+	}
+
+	if (p_value->type == GDScriptParser::Node::DICTIONARY) {
+		return infer_struct_type_from_literal(static_cast<GDScriptParser::DictionaryNode *>(p_value));
+	}
+
+	if (p_value->type == GDScriptParser::Node::ARRAY) {
+		GDScriptParser::ArrayNode *array = static_cast<GDScriptParser::ArrayNode *>(p_value);
+		GDScriptParser::DataType array_type;
+		array_type.kind = GDScriptParser::DataType::BUILTIN;
+		array_type.builtin_type = Variant::ARRAY;
+		array_type.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
+
+		GDScriptParser::DataType element_type;
+		bool is_uniform = !array->elements.is_empty();
+		Vector<GDScriptParser::DataType> element_types;
+		for (GDScriptParser::ExpressionNode *element : array->elements) {
+			const GDScriptParser::DataType type = infer_literal_value_type(element);
+			element_types.push_back(type);
+			if (!is_uniform) {
+				continue;
+			}
+			if (element == nullptr || element->type == GDScriptParser::Node::ARRAY || type.is_variant() || !type.is_hard_type()) {
+				is_uniform = false; // Nested typed collections are not supported.
+			} else if (element_types.size() == 1) {
+				element_type = type;
+			} else if (!is_same_inferred_type(element_type, type)) {
+				is_uniform = false;
+			}
+		}
+
+		if (is_uniform) {
+			array_type.set_container_element_type(0, element_type);
+		} else {
+			// The array stays untyped, so its dictionary elements won't be updated as struct literals by the parent.
+			// Do it here, so that their bare identifier keys are still valid.
+			for (uint32_t i = 0; i < array->elements.size(); i++) {
+				GDScriptParser::ExpressionNode *element = array->elements[i];
+				if (element != nullptr && element->type == GDScriptParser::Node::DICTIONARY && element_types[(int)i].is_struct_type()) {
+					update_struct_literal(static_cast<GDScriptParser::DictionaryNode *>(element), element_types[i]);
+				}
+			}
+		}
+		return array_type;
+	}
+
+	GDScriptParser::DataType type = p_value->type_constraint;
+	if (!type.is_set() || type.has_no_type() || !type.is_hard_type() || type.is_variant() || type.is_meta_type || type.is_pseudo_type || (type.kind == GDScriptParser::DataType::BUILTIN && type.builtin_type == Variant::NIL)) {
+		return GDScriptParser::DataType::get_variant_type();
+	}
+	type.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
+	type.is_constant = false;
+	type.is_read_only = false;
+	type.is_coroutine = false;
+	return type;
+}
+
+// Struct type with a required key for each element of a dictionary literal, typed after its value.
+// Elements whose key can't be a struct key are skipped here and reported by `update_struct_literal()`.
+GDScriptParser::DataType GDScriptAnalyzer::infer_struct_type_from_literal(GDScriptParser::DictionaryNode *p_dictionary) {
+	GDScriptParser::DataType result;
+	result.kind = GDScriptParser::DataType::BUILTIN;
+	result.builtin_type = Variant::DICTIONARY;
+	result.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
+	result.is_struct = true;
+
+	for (const GDScriptParser::DictionaryNode::Pair &element : p_dictionary->elements) {
+		StringName key;
+		if (!get_literal_struct_key_name(p_dictionary, element.key, key) || result.find_struct_key(key) >= 0) {
+			continue; // Invalid and duplicate keys are reported by `update_struct_literal()`.
+		}
+		result.add_struct_key(key, infer_literal_value_type(element.value), false);
+	}
+	return result;
+}
+
+// `inferType(value)`: returns `value` unchanged, typed as the struct inferred from the dictionary literal
+// (`inferType({ a: 1, b: ["x"] })` is a `Struct[{ a: int, b: Array[String] }]`). A value that already has a struct type keeps it.
+GDScriptParser::DataType GDScriptAnalyzer::reduce_infer_type_call(GDScriptParser::CallNode *p_call) {
+	GDScriptParser::DataType result;
+	result.kind = GDScriptParser::DataType::BUILTIN;
+	result.builtin_type = Variant::DICTIONARY;
+	result.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
+
+	if (p_call->arguments.size() != 1) {
+		if (p_call->arguments.is_empty()) {
+			push_error(R"*(Too few arguments for "inferType()" call. Expected at least 1 but received 0.)*", p_call);
+		} else {
+			push_error(vformat(R"*(Too many arguments for "inferType()" call. Expected at most 1 but received %d.)*", p_call->arguments.size()), p_call);
+		}
+		return result;
+	}
+
+	GDScriptParser::ExpressionNode *argument = p_call->arguments[0];
+	if (argument == nullptr) {
+		return result;
+	}
+
+	if (argument->type == GDScriptParser::Node::DICTIONARY) {
+		GDScriptParser::DictionaryNode *dictionary = static_cast<GDScriptParser::DictionaryNode *>(argument);
+		// Validates the literal against the inferred type and turns bare identifier keys into key names.
+		update_struct_literal(dictionary, infer_struct_type_from_literal(dictionary));
+		result = dictionary->type_constraint;
+	} else if (argument->type_constraint.is_struct_type()) {
+		result = argument->type_constraint;
+	} else {
+		push_error(vformat(R"*(Cannot infer a struct type for "inferType()": expected a dictionary literal or a struct value, but got "%s".)*", argument->type_constraint.to_string_strict()), argument);
+		return result;
+	}
+
+	result.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
+	result.is_constant = false;
+	result.is_read_only = false;
+	return result;
+}
+
 // Structural typing: `p_source` can be used as `p_target` if it has every required key of `p_target`
 // with compatible types. Extra keys in `p_source` are allowed.
 bool GDScriptAnalyzer::is_struct_compatible(const GDScriptParser::DataType &p_target, const GDScriptParser::DataType &p_source, String *r_reason) {
@@ -3916,6 +4062,10 @@ void GDScriptAnalyzer::reduce_call(GDScriptParser::CallNode *p_call, bool p_is_a
 #endif // DEBUG_ENABLED
 
 			p_call->type_constraint = call_type;
+			return;
+		} else if (function_name == SNAME("inferType") && GDScriptUtilityFunctions::function_exists(function_name)) {
+			// `inferType({ ... })`: the result is typed as a struct inferred from the dictionary literal.
+			p_call->type_constraint = reduce_infer_type_call(p_call);
 			return;
 		} else if (GDScriptUtilityFunctions::function_exists(function_name)) {
 			MethodInfo function_info = GDScriptUtilityFunctions::get_function_info(function_name);

@@ -2,13 +2,13 @@
 const Book = preload("struct_utility_types_external.notest.gd")
 
 class Foo extends Resource:
-	var foo := false # Has a default value: required key.
-	var bar: String # No default value: optional key.
+	var foo := false # Has a default value: optional key.
+	var bar: String # No default value: required key.
 	static var ignored_static := 1 # Static variables are not keys.
 
 class SpecialFoo extends Foo:
 	var level := 1
-	var anything # Untyped: `Variant`.
+	var anything # Untyped: `Variant` (and required, since it has no default value).
 
 type FooData = StructFromClass[Foo]
 type Config = Struct[{ name: String, size: int, nested: Struct[{ x: float }] }]
@@ -26,14 +26,14 @@ func apply_patch(config: Config, patch: ConfigPatch) -> Config:
 	return result
 
 func test():
-	print(describe({ foo = true }))
-	print(describe({ foo = false, bar = "set" }))
+	print(describe({ bar = "only bar" }))
+	print(describe({ foo = true, bar = "set" }))
 
-	var special: StructFromClass[SpecialFoo] = { foo = true, level = 3 }
+	var special: StructFromClass[SpecialFoo] = { bar = "special", anything = null, level = 3 }
 	special.anything = [1, 2]
 	print(special.level, " ", special.anything)
 
-	var book: StructFromClass[Book] = { title = "GDScript" }
+	var book: StructFromClass[Book] = { page_count = 42 }
 	print(book.title, " ", book.page_count)
 
 	var config: Config = { name = "a", size = 1, nested = { x = 1.0 } }
