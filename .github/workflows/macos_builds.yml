@@ -115,6 +115,8 @@ jobs:
         run: |
           mkdir -p ./bundle
           cp -R ./misc/dist/macos_tools.app ./bundle/Godot.app
+          # Universal build uses Info.plist; the per-arch variants break codesign.
+          rm -f ./bundle/Godot.app/Contents/Info_arm64.plist ./bundle/Godot.app/Contents/Info_x86_64.plist
           mkdir -p ./bundle/Godot.app/Contents/MacOS
           cp ${{ matrix.bin }} ./bundle/Godot.app/Contents/MacOS/Godot
           chmod +x ./bundle/Godot.app/Contents/MacOS/Godot
