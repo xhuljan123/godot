@@ -107,6 +107,21 @@ jobs:
           strip bin/godot.*
           chmod +x bin/godot.*
 
+      # Wrap the editor binary in a .app bundle so it launches without a Terminal
+      # window and shows the Godot icon. Zipped with ditto because upload-artifact
+      # drops executable permissions from loose files.
+      - name: Create macOS app bundle
+        if: matrix.target == 'editor'
+        run: |
+          mkdir -p ./bundle
+          cp -R ./misc/dist/macos_tools.app ./bundle/Godot.app
+          mkdir -p ./bundle/Godot.app/Contents/MacOS
+          cp ${{ matrix.bin }} ./bundle/Godot.app/Contents/MacOS/Godot
+          chmod +x ./bundle/Godot.app/Contents/MacOS/Godot
+          codesign --force --timestamp --options=runtime --entitlements ./misc/dist/macos/editor.entitlements -s - ./bundle/Godot.app
+          ditto -c -k --keepParent ./bundle/Godot.app ./bin/Godot.macos.editor.app.zip
+          rm -rf ./bundle
+
       - name: Upload artifact
         uses: ./.github/actions/upload-artifact
         with:
