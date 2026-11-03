@@ -114,6 +114,15 @@ public:
 
 		StringName alias_name; // Set if this type comes from a type alias (`type Name = ...`). Used for display only.
 
+		// Callable signature (`Callable[int, String]`). At runtime it's a plain `Callable`, the signature is only checked statically.
+		// Set for annotated typed callables, and for callable values whose signature is known (lambdas and function references).
+		bool is_typed_callable = false;
+		Vector<DataType> callable_arg_types;
+		// Number of trailing arguments that can be omitted when calling (from default parameter values).
+		int callable_default_arg_count = 0;
+		// Extra arguments are accepted (rest parameter or native vararg method).
+		bool callable_is_vararg = false;
+
 		enum Kind {
 			BUILTIN,
 			NATIVE,
@@ -218,6 +227,17 @@ public:
 
 		_FORCE_INLINE_ bool is_struct_type() const { return is_struct && kind == BUILTIN && builtin_type == Variant::DICTIONARY && !is_meta_type; }
 
+		_FORCE_INLINE_ bool is_typed_callable_type() const { return is_typed_callable && kind == BUILTIN && builtin_type == Variant::CALLABLE && !is_meta_type; }
+
+		_FORCE_INLINE_ int get_callable_required_arg_count() const { return callable_arg_types.size() - callable_default_arg_count; }
+
+		void clear_callable_signature() {
+			is_typed_callable = false;
+			callable_arg_types.clear();
+			callable_default_arg_count = 0;
+			callable_is_vararg = false;
+		}
+
 		_FORCE_INLINE_ int find_struct_key(const StringName &p_key) const {
 			for (int i = 0; i < struct_keys.size(); i++) {
 				if (struct_keys[i] == p_key) {
@@ -304,6 +324,10 @@ public:
 			struct_key_optional = p_other.struct_key_optional;
 			struct_is_exact = p_other.struct_is_exact;
 			alias_name = p_other.alias_name;
+			is_typed_callable = p_other.is_typed_callable;
+			callable_arg_types = p_other.callable_arg_types;
+			callable_default_arg_count = p_other.callable_default_arg_count;
+			callable_is_vararg = p_other.callable_is_vararg;
 		}
 
 		DataType() = default;
@@ -1305,6 +1329,9 @@ public:
 		};
 		bool is_struct = false;
 		LocalVector<StructField> struct_fields;
+
+		// `Callable[int, String]`: the argument types are in `container_types` (can be empty for `Callable[]`).
+		bool is_callable_signature = false;
 
 		// Utility types that produce a struct type from another type (the argument is `container_types[0]`).
 		enum StructModifier {

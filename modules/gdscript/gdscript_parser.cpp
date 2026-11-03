@@ -4000,6 +4000,28 @@ GDScriptParser::TypeNode *GDScriptParser::parse_type(bool p_allow_void) {
 		return type;
 	}
 
+	if (type_element->name == SNAME("Callable") && check(GDScriptTokenizer::Token::BRACKET_OPEN)) {
+		// Typed callable (like `Callable[int, String]`). The argument list can span multiple lines and can be empty (`Callable[]`).
+		push_multiline(true);
+		advance(); // "[".
+		type->is_callable_signature = true;
+		while (!check(GDScriptTokenizer::Token::BRACKET_CLOSE) && !is_at_end()) {
+			TypeNode *argument_type = parse_type(false); // Don't allow void for argument types.
+			if (argument_type == nullptr) {
+				push_error(R"(Expected argument type in "Callable[...]".)");
+				break;
+			}
+			type->container_types.push_back(argument_type);
+			if (!match(GDScriptTokenizer::Token::COMMA)) {
+				break;
+			}
+		}
+		pop_multiline();
+		consume(GDScriptTokenizer::Token::BRACKET_CLOSE, R"(Expected closing "]" after "Callable" argument types.)");
+		complete_extents(type);
+		return type;
+	}
+
 	if (match(GDScriptTokenizer::Token::BRACKET_OPEN)) {
 		if (is_struct_type && match(GDScriptTokenizer::Token::BRACE_OPEN)) {
 			// Struct type (like `Struct[{ name: String, age?: int }]`).
@@ -4091,7 +4113,7 @@ GDScriptParser::TypeNode *GDScriptParser::parse_type(bool p_allow_void) {
 				complete_extents(type);
 				type = nullptr;
 				break;
-			} else if (container_type->container_types.size() > 0 && container_type->struct_modifier == TypeNode::STRUCT_MODIFIER_NONE) {
+			} else if (container_type->container_types.size() > 0 && container_type->struct_modifier == TypeNode::STRUCT_MODIFIER_NONE && !container_type->is_callable_signature) {
 				push_error("Nested typed collections are not supported.");
 			} else {
 				type->container_types.push_back(container_type);
@@ -5569,6 +5591,19 @@ String GDScriptParser::DataType::to_string_expanded() const {
 			}
 			if (builtin_type == Variant::DICTIONARY && has_container_element_types()) {
 				return vformat("Dictionary[%s, %s]", get_container_element_type_or_variant(0).to_string(), get_container_element_type_or_variant(1).to_string());
+			}
+			if (is_typed_callable_type()) {
+				String arguments;
+				for (int i = 0; i < callable_arg_types.size(); i++) {
+					if (i > 0) {
+						arguments += ", ";
+					}
+					arguments += callable_arg_types[i].to_string();
+				}
+				if (callable_is_vararg) {
+					arguments += callable_arg_types.is_empty() ? "..." : ", ...";
+				}
+				return vformat("Callable[%s]", arguments);
 			}
 			if (builtin_type == Variant::DICTIONARY && is_struct && !is_meta_type) {
 				if (struct_keys.is_empty()) {

@@ -1,0 +1,16 @@
+GDTEST_OK
+1 a
+2 default
+3 b
+4 default
+11
+1 2.5
+callback: 10
+returned: hello
+ALIAS
+no args
+each: 7
+each: 8
+item: sword
+2
+reassigned

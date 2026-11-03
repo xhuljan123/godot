@@ -447,8 +447,92 @@ static String _format_struct_type(const String &p_type) {
 	return result + suffix;
 }
 
+// Splits the argument list of a GDScript typed callable (`Callable[int, Array[String], Dictionary[int, float]]`)
+// at the top-level commas.
+static PackedStringArray _split_callable_type_arguments(const String &p_arguments) {
+	PackedStringArray arguments;
+	int depth = 0;
+	int start = 0;
+	for (int i = 0; i < p_arguments.length(); i++) {
+		const char32_t c = p_arguments[i];
+		if (c == '[' || c == '{' || c == '(') {
+			depth++;
+		} else if (c == ']' || c == '}' || c == ')') {
+			depth--;
+		} else if (c == ',' && depth == 0) {
+			arguments.push_back(p_arguments.substr(start, i - start).strip_edges());
+			start = i + 1;
+		}
+	}
+	const String last = p_arguments.substr(start).strip_edges();
+	if (!last.is_empty()) {
+		arguments.push_back(last);
+	}
+	return arguments;
+}
+
+static void _add_type_to_rt(const String &p_type, const String &p_enum, bool p_is_bitfield, RichTextLabel *p_rt, const Control *p_owner_node, const String &p_class);
+
+// Adds a GDScript typed callable (`Callable[int, String]`), with a link for each argument type.
+static void _add_callable_type_to_rt(const String &p_type, RichTextLabel *p_rt, const Control *p_owner_node, const String &p_class) {
+	const Color type_color = p_owner_node->get_theme_color(SNAME("type_color"), SNAME("EditorHelp"));
+	const String arguments = p_type.trim_prefix("Callable[").trim_suffix("]");
+
+	p_rt->push_color(type_color);
+	p_rt->push_meta("#Callable", RichTextLabel::META_UNDERLINE_ON_HOVER); // class
+	p_rt->add_text("Callable");
+	p_rt->pop(); // meta
+	p_rt->add_text("[");
+	p_rt->pop(); // color
+
+	const PackedStringArray argument_types = _split_callable_type_arguments(arguments);
+	for (int i = 0; i < argument_types.size(); i++) {
+		if (i > 0) {
+			p_rt->push_color(type_color);
+			p_rt->add_text(", ");
+			p_rt->pop(); // color
+		}
+		const String &argument_type = argument_types[i];
+		if (argument_type == "...") {
+			p_rt->push_color(Color(type_color, 0.5));
+			p_rt->push_hint(TTR("Any number of extra arguments is accepted."));
+			p_rt->add_text("...");
+			p_rt->pop(); // hint
+			p_rt->pop(); // color
+		} else if (argument_type.contains_char('.') && !argument_type.contains_char('[') && !ClassDB::class_exists(argument_type)) {
+			// Enum (like `Node.ProcessMode`).
+			_add_type_to_rt("int", argument_type, false, p_rt, p_owner_node, p_class);
+		} else {
+			_add_type_to_rt(argument_type, String(), false, p_rt, p_owner_node, p_class);
+		}
+	}
+
+	p_rt->push_color(type_color);
+	p_rt->add_text("]");
+	p_rt->pop(); // color
+}
+
 static void _add_type_to_rt(const String &p_type, const String &p_enum, bool p_is_bitfield, RichTextLabel *p_rt, const Control *p_owner_node, const String &p_class) {
 	const Color type_color = p_owner_node->get_theme_color(SNAME("type_color"), SNAME("EditorHelp"));
+
+	if (p_enum.is_empty() && p_type.begins_with("Callable[")) {
+		if (p_type.ends_with("][]")) {
+			// Typed array of typed callables (`Array[Callable[int]]`).
+			p_rt->push_color(type_color);
+			p_rt->push_meta("#Array", RichTextLabel::META_UNDERLINE_ON_HOVER); // class
+			p_rt->add_text("Array");
+			p_rt->pop(); // meta
+			p_rt->add_text("[");
+			p_rt->pop(); // color
+			_add_callable_type_to_rt(p_type.trim_suffix("[]"), p_rt, p_owner_node, p_class);
+			p_rt->push_color(type_color);
+			p_rt->add_text("]");
+			p_rt->pop(); // color
+		} else {
+			_add_callable_type_to_rt(p_type, p_rt, p_owner_node, p_class);
+		}
+		return;
+	}
 
 	if (p_enum.is_empty() && p_type.begins_with("Struct[")) {
 		// GDScript struct type: a `Dictionary` with known keys.

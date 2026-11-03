@@ -852,6 +852,44 @@ static String _make_arguments_hint(const MethodInfo &p_info, int p_arg_idx, bool
 	return arghint;
 }
 
+// Argument hint for `call()` on a typed callable (`Callable[int, String]`), like `Variant call(arg1: int, arg2: String = ...)`.
+static String _make_typed_callable_arguments_hint(const GDScriptParser::DataType &p_callable_type, const StringName &p_method, int p_arg_idx) {
+	String arghint = String(p_method == SNAME("call_deferred") ? "void " : "Variant ") + String(p_method) + "(";
+
+	const int arg_count = p_callable_type.callable_arg_types.size();
+	const int required_count = p_callable_type.get_callable_required_arg_count();
+	for (int i = 0; i < arg_count; i++) {
+		if (i > 0) {
+			arghint += ", ";
+		}
+		if (i == p_arg_idx) {
+			arghint += String::chr(0xFFFF);
+		}
+		arghint += vformat("arg%d: %s", i + 1, p_callable_type.callable_arg_types[i].to_string());
+		if (i >= required_count) {
+			arghint += " = ..."; // Optional, the assigned function has a default value.
+		}
+		if (i == p_arg_idx) {
+			arghint += String::chr(0xFFFF);
+		}
+	}
+
+	if (p_callable_type.callable_is_vararg) {
+		if (arg_count > 0) {
+			arghint += ", ";
+		}
+		if (p_arg_idx >= arg_count) {
+			arghint += String::chr(0xFFFF);
+		}
+		arghint += "...args";
+		if (p_arg_idx >= arg_count) {
+			arghint += String::chr(0xFFFF);
+		}
+	}
+
+	return arghint + ")";
+}
+
 static String _make_arguments_hint(const GDScriptParser::FunctionNode *p_function, uint32_t p_arg_idx, bool p_just_args = false) {
 	String arghint;
 
@@ -2630,8 +2668,9 @@ static bool _guess_identifier_type(GDScriptParser::CompletionContext &p_context,
 		c.current_line = last_assign_line;
 		GDScriptCompletionIdentifier assigned_type;
 		if (_guess_expression_type(c, last_assigned_expression, assigned_type)) {
-			if (id_type.type.is_set() && (assigned_type.type.kind == GDScriptParser::DataType::VARIANT || (assigned_type.type.is_set() && !GDScriptAnalyzer::check_type_compatibility(id_type.type, assigned_type.type)))) {
+			if (id_type.type.is_set() && (assigned_type.type.kind == GDScriptParser::DataType::VARIANT || id_type.type.is_typed_callable_type() || (assigned_type.type.is_set() && !GDScriptAnalyzer::check_type_compatibility(id_type.type, assigned_type.type)))) {
 				// The assigned type is incompatible. The annotated type takes priority.
+				// Typed callables (`Callable[int, String]`) always use the declared signature, which is what calls are checked against.
 				r_type = id_type;
 				r_type.assigned_expression = last_assigned_expression;
 			} else {
@@ -3364,6 +3403,11 @@ static void _list_call_arguments(GDScriptParser::CompletionContext &p_context, c
 				base_type.kind = GDScriptParser::DataType::UNRESOLVED;
 			} break;
 			case GDScriptParser::DataType::BUILTIN: {
+				if (base_type.is_typed_callable_type() && (method == SNAME("call") || method == SNAME("call_deferred"))) {
+					// `Callable[int, String]`: show the declared signature instead of the vararg `Callable.call()`.
+					r_arghint = _make_typed_callable_arguments_hint(base_type, method, p_argidx);
+					return;
+				}
 				if (base.get_type() == Variant::NIL) {
 					Callable::CallError err;
 					Variant::construct(base_type.builtin_type, base, nullptr, 0, err);

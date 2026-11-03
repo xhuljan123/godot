@@ -168,6 +168,10 @@ class GDScriptAnalyzer {
 	static bool is_struct_assignment_unsafe(const GDScriptParser::DataType &p_target, const GDScriptParser::DataType &p_source);
 	static bool is_struct_mismatch(const GDScriptParser::DataType &p_target, const GDScriptParser::DataType &p_source);
 	void flush_pending_struct_key_errors();
+	// Typed callables (`Callable[int, String]`).
+	static bool is_callable_signature_compatible(const GDScriptParser::DataType &p_target, const GDScriptParser::DataType &p_source, String *r_reason = nullptr);
+	static void set_callable_signature_from_function(GDScriptParser::DataType &r_type, const GDScriptParser::FunctionNode *p_function);
+	void set_callable_signature_from_method_info(GDScriptParser::DataType &r_type, const MethodInfo &p_info, const GDScriptParser::Node *p_source) const;
 
 public:
 	static GDScriptParser::DataType get_struct_key_read_type(const GDScriptParser::DataType &p_struct_type, int p_key_index);

@@ -104,6 +104,23 @@ void GDScriptDocGen::_doctype_from_datatype(const DataType &p_datatype, String &
 				r_type = p_datatype.to_string_expanded();
 				return;
 			}
+			if (p_datatype.is_typed_callable_type()) {
+				// Shown with the argument types (e.g. in hover tooltips), like `Callable[int, String]`.
+				String arguments;
+				for (int i = 0; i < p_datatype.callable_arg_types.size(); i++) {
+					String argument_type, argument_enum;
+					_doctype_from_datatype(p_datatype.callable_arg_types[i], argument_type, argument_enum);
+					if (i > 0) {
+						arguments += ", ";
+					}
+					arguments += argument_enum.is_empty() ? argument_type : argument_enum;
+				}
+				if (p_datatype.callable_is_vararg) {
+					arguments += p_datatype.callable_arg_types.is_empty() ? "..." : ", ...";
+				}
+				r_type = "Callable[" + arguments + "]";
+				return;
+			}
 			if (p_datatype.builtin_type == Variant::DICTIONARY && p_datatype.has_container_element_types()) {
 				String key, value;
 				_doctype_from_datatype(p_datatype.get_container_element_type_or_variant(0), key, r_enum);
