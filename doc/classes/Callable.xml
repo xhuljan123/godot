@@ -45,6 +45,15 @@
 			# Prints "Attack!", when the button_pressed signal is emitted.
 			button_pressed.connect(func(): print("Attack!"))
 		[/codeblock]
+		In GDScript, a [Callable] type hint can list the argument types of the function, like [code]Callable[int, String][/code]. Assigned functions and lambdas, and the arguments passed to [method call], are then checked when the script is compiled. Arguments that have a default value in the assigned function can be omitted. The signature is only checked statically: at runtime, the value is a regular [Callable].
+		[codeblock]
+		var on_hit: Callable[int, String] = func(damage: int, source: String = "unknown"):
+			print(damage, " from ", source)
+
+		func _ready():
+			on_hit.call(10)  # Valid, "source" has a default value.
+			on_hit.call("10")  # Compile error, argument 1 should be "int".
+		[/codeblock]
 		In GDScript, you can access methods and global functions as [Callable]s:
 		[codeblock]
 		tween.tween_callback(node.queue_free)  # Object methods.
