@@ -118,11 +118,20 @@ void GDScriptFunction::_profile_native_call(uint64_t p_t_taken, const String &p_
 
 #endif // DEBUG_ENABLED
 
+#ifdef DEBUG_ENABLED
+
 // Argument that failed a struct type check in the last call, so the caller can report a struct-specific error.
+// Only read by `_get_call_error()`, so it only exists in debug builds (avoids `-Wunused-but-set-global` in release).
 static thread_local const Variant *last_struct_argument_error = nullptr;
 
+#endif // DEBUG_ENABLED
+
 void GDScriptFunction::mark_struct_argument_error(const Variant *p_argument) {
+#ifdef DEBUG_ENABLED
 	last_struct_argument_error = p_argument;
+#else
+	(void)p_argument;
+#endif
 }
 
 #ifdef DEBUG_ENABLED
@@ -570,7 +579,9 @@ Variant GDScriptFunction::call(GDScriptInstance *p_instance, const Variant **p_a
 			}
 			if (!argument_types[i].is_type(*p_args[i], true)) {
 				if (argument_types[i].is_struct_type() && p_args[i]->get_type() == Variant::DICTIONARY) {
+#ifdef DEBUG_ENABLED
 					last_struct_argument_error = p_args[i];
+#endif
 					// Explain which key doesn't match, since the generic error only mentions "Dictionary".
 					const String reason = argument_types[i].validate_struct(*p_args[i]);
 					_err_print_error(String(name).utf8().get_data(), String(source).utf8().get_data(), _initial_line,
