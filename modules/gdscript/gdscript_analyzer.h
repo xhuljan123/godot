@@ -164,6 +164,7 @@ class GDScriptAnalyzer {
 	void update_dictionary_literal_element_type(GDScriptParser::DictionaryNode *p_dictionary, const GDScriptParser::DataType &p_key_element_type, const GDScriptParser::DataType &p_value_element_type);
 	void update_struct_literal(GDScriptParser::DictionaryNode *p_dictionary, const GDScriptParser::DataType &p_struct_type);
 	void update_literal_for_expected_type(GDScriptParser::ExpressionNode *p_expression, const GDScriptParser::DataType &p_expected_type);
+	static bool is_key_of_compatible(const GDScriptParser::DataType &p_target, const GDScriptParser::DataType &p_source, String *r_reason = nullptr);
 	static bool is_struct_compatible(const GDScriptParser::DataType &p_target, const GDScriptParser::DataType &p_source, String *r_reason = nullptr);
 	static bool is_struct_assignment_unsafe(const GDScriptParser::DataType &p_target, const GDScriptParser::DataType &p_source);
 	static bool is_struct_mismatch(const GDScriptParser::DataType &p_target, const GDScriptParser::DataType &p_source);

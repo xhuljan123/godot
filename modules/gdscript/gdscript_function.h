@@ -54,6 +54,10 @@ public:
 	Vector<GDScriptDataType> struct_key_types;
 	Vector<bool> struct_key_optional;
 
+	// `KeyOf[StructType]`, only for `String` builtin types: the value must be one of these keys.
+	bool is_key_of = false;
+	Vector<StringName> key_of_values;
+
 	enum Kind {
 		VARIANT, // Can be any type.
 		BUILTIN,
@@ -75,6 +79,7 @@ public:
 	bool is_type(const Variant &p_variant, bool p_allow_implicit_conversion = false) const;
 
 	_FORCE_INLINE_ bool is_struct_type() const { return is_struct && kind == BUILTIN && builtin_type == Variant::DICTIONARY; }
+	_FORCE_INLINE_ bool is_key_of_type() const { return is_key_of && kind == BUILTIN && builtin_type == Variant::STRING; }
 	// Checks the keys and values of `p_dictionary` against the struct shape. Returns an empty string on success, or the reason of the failure.
 	String validate_struct(const Dictionary &p_dictionary, const String &p_path = String()) const;
 	String to_string() const;
@@ -141,7 +146,9 @@ public:
 				is_struct == p_other.is_struct &&
 				struct_keys == p_other.struct_keys &&
 				struct_key_types == p_other.struct_key_types &&
-				struct_key_optional == p_other.struct_key_optional;
+				struct_key_optional == p_other.struct_key_optional &&
+				is_key_of == p_other.is_key_of &&
+				key_of_values == p_other.key_of_values;
 	}
 
 	bool operator!=(const GDScriptDataType &p_other) const {
@@ -159,6 +166,8 @@ public:
 		struct_keys = p_other.struct_keys;
 		struct_key_types = p_other.struct_key_types;
 		struct_key_optional = p_other.struct_key_optional;
+		is_key_of = p_other.is_key_of;
+		key_of_values = p_other.key_of_values;
 	}
 
 	GDScriptDataType(const GDScriptDataType &p_other) {

@@ -814,6 +814,28 @@ GDScriptParser::DataType GDScriptAnalyzer::resolve_datatype(GDScriptParser::Type
 			return bad_type; // Error already reported.
 		}
 
+		if (p_type->struct_modifier == GDScriptParser::TypeNode::STRUCT_MODIFIER_KEY_OF) {
+			// `KeyOf[StructType]`: a `String` that can only be one of the keys of the struct (like `keyof T` in TypeScript).
+			if (!argument_type.is_struct_type()) {
+				push_error(vformat(R"("KeyOf" expects a struct type, but got "%s".)", argument_type.to_string()), argument);
+				return bad_type;
+			}
+			if (argument_type.struct_keys.is_empty()) {
+				push_error(R"("KeyOf" cannot be used with a struct type that has no keys.)", argument);
+				return bad_type;
+			}
+			result.kind = GDScriptParser::DataType::BUILTIN;
+			result.builtin_type = Variant::STRING;
+			result.is_key_of = true;
+			result.key_of_values = argument_type.struct_keys;
+			GDScriptParser::DataType source_struct = argument_type;
+			source_struct.is_constant = false;
+			source_struct.is_read_only = false;
+			result.key_of_struct.push_back(source_struct);
+			p_type->resolved_type = result;
+			return result;
+		}
+
 		if (p_type->struct_modifier == GDScriptParser::TypeNode::STRUCT_MODIFIER_PARTIAL || p_type->struct_modifier == GDScriptParser::TypeNode::STRUCT_MODIFIER_REQUIRED) {
 			// `Partial[StructType]`: same keys, all optional (like `Partial<T>` in TypeScript).
 			// `Required[StructType]`: same keys, all required (like `Required<T>` in TypeScript).
@@ -3008,6 +3030,20 @@ static bool enum_has_value(const GDScriptParser::DataType p_type, int64_t p_valu
 #endif // DEBUG_ENABLED
 
 void GDScriptAnalyzer::update_const_expression_builtin_type(GDScriptParser::ExpressionNode *p_expression, const GDScriptParser::DataType &p_type, const char *p_usage, bool p_is_cast) {
+	if (p_type.is_key_of_type() && p_expression->is_constant && (p_expression->reduced_value.get_type() == Variant::STRING || p_expression->reduced_value.get_type() == Variant::STRING_NAME)) {
+		// `KeyOf[StructType]`: the constant must be one of the struct keys. Checked before the early return
+		// below, since a plain `String` compares equal to a `KeyOf` type.
+		// The value is known, so it's checked even if the constant has the `KeyOf` type of another struct.
+		const String key = p_expression->reduced_value;
+		if (!p_type.key_of_values.has(StringName(key))) {
+			push_error(vformat(R"(Cannot %s "%s" as "%s". Expected one of: %s.)", p_usage, key.c_escape(), p_type.to_string(), p_type.get_key_of_values_text()), p_expression);
+			return;
+		}
+		p_expression->reduced_value = key; // `&"key"` becomes a `String`.
+		p_expression->type_constraint = p_type;
+		return;
+	}
+
 	if (p_expression->type_constraint == p_type) {
 		return;
 	}
@@ -3585,9 +3621,25 @@ void GDScriptAnalyzer::set_callable_signature_from_method_info(GDScriptParser::D
 	r_type.callable_is_vararg = (p_info.flags & METHOD_FLAG_VARARG) != 0;
 }
 
+// Every key accepted by `p_source` must be accepted by `p_target` (both are `KeyOf` types).
+bool GDScriptAnalyzer::is_key_of_compatible(const GDScriptParser::DataType &p_target, const GDScriptParser::DataType &p_source, String *r_reason) {
+	for (const StringName &key : p_source.key_of_values) {
+		if (!p_target.key_of_values.has(key)) {
+			if (r_reason) {
+				*r_reason = vformat(R"(Key "%s" is not one of: %s.)", key, p_target.get_key_of_values_text());
+			}
+			return false;
+		}
+	}
+	return true;
+}
+
 bool GDScriptAnalyzer::is_struct_compatible(const GDScriptParser::DataType &p_target, const GDScriptParser::DataType &p_source, String *r_reason) {
 	if (p_target.is_typed_callable_type() && p_source.is_typed_callable_type()) {
 		return is_callable_signature_compatible(p_target, p_source, r_reason);
+	}
+	if (p_target.is_key_of_type() && p_source.is_key_of_type()) {
+		return is_key_of_compatible(p_target, p_source, r_reason);
 	}
 	for (int i = 0; i < p_target.struct_keys.size(); i++) {
 		const StringName &key = p_target.struct_keys[i];
@@ -3643,10 +3695,10 @@ bool GDScriptAnalyzer::is_struct_assignment_unsafe(const GDScriptParser::DataTyp
 	return false;
 }
 
-// Two struct types (or two callable signatures) that are not compatible must not be treated as a "maybe compatible" downcast.
-// `is_struct_compatible()` gives the reason for both.
+// Two struct types (or two callable signatures, or two `KeyOf` types) that are not compatible must not be treated
+// as a "maybe compatible" downcast. `is_struct_compatible()` gives the reason for all of them.
 bool GDScriptAnalyzer::is_struct_mismatch(const GDScriptParser::DataType &p_target, const GDScriptParser::DataType &p_source) {
-	return (p_target.is_struct_type() && p_source.is_struct_type()) || (p_target.is_typed_callable_type() && p_source.is_typed_callable_type());
+	return (p_target.is_struct_type() && p_source.is_struct_type()) || (p_target.is_typed_callable_type() && p_source.is_typed_callable_type()) || (p_target.is_key_of_type() && p_source.is_key_of_type());
 }
 
 // Type of `value.key` when reading a struct key. Optional keys give `null` when missing, so unless the declared type
@@ -5911,6 +5963,33 @@ void GDScriptAnalyzer::reduce_subscript(GDScriptParser::SubscriptNode *p_subscri
 					push_error(vformat(R"(Key "%s" does not exist in struct type "%s".)", key, base_type.to_string()), p_subscript->index);
 					result_type.kind = GDScriptParser::DataType::VARIANT;
 				}
+			} else if (base_type.is_struct_type() && index_type.is_hard_type() && index_type.is_key_of_type()) {
+				// Struct access with a `KeyOf` key (`value[key]`). Every accepted key must exist in the struct.
+				// If all of them have the same type, the result has it as a weak type: known for completion, but the
+				// access stays a regular dictionary access, checked at runtime when assigned to a typed variable.
+				GDScriptParser::DataType common_type;
+				bool has_common_type = true;
+				bool all_keys_exist = true;
+				for (int i = 0; i < index_type.key_of_values.size(); i++) {
+					const int key_index = base_type.find_struct_key(index_type.key_of_values[i]);
+					if (key_index < 0) {
+						push_error(vformat(R"(Key "%s" of "%s" does not exist in struct type "%s".)", index_type.key_of_values[i], index_type.to_string(), base_type.to_string()), p_subscript->index);
+						all_keys_exist = false;
+						break;
+					}
+					const GDScriptParser::DataType key_type = get_struct_key_read_type(base_type, key_index);
+					if (i == 0) {
+						common_type = key_type;
+					} else if (key_type.to_string_expanded() != common_type.to_string_expanded()) {
+						has_common_type = false;
+					}
+				}
+				if (all_keys_exist && has_common_type && common_type.is_set() && !common_type.is_variant()) {
+					result_type = common_type;
+					result_type.type_source = GDScriptParser::DataType::INFERRED;
+				} else {
+					result_type.kind = GDScriptParser::DataType::VARIANT;
+				}
 			} else {
 				if (base_type.kind == GDScriptParser::DataType::BUILTIN && !index_type.is_variant()) {
 					// Check if indexing is valid.
@@ -6171,6 +6250,11 @@ void GDScriptAnalyzer::reduce_ternary_op(GDScriptParser::TernaryOpNode *p_ternar
 		if (!same_signature) {
 			result.clear_callable_signature();
 		}
+	} else if (true_type.is_key_of_type() && false_type.is_key_of_type() && !is_key_of_compatible(true_type, false_type) && !is_key_of_compatible(false_type, true_type)) {
+		// Keys of unrelated structs: still a `String`.
+		result = true_type;
+		result.clear_key_of();
+		result.alias_name = StringName();
 	} else {
 		result = true_type;
 		if (!is_type_compatible(true_type, false_type)) {
@@ -6210,6 +6294,11 @@ void GDScriptAnalyzer::reduce_type_test(GDScriptParser::TypeTestNode *p_type_tes
 
 	if (test_type.is_struct_type()) {
 		push_error(R"*(Struct types cannot be used with the "is" operator. Test for "Dictionary" and check its keys with "has()" instead.)*", p_type_test->test_type);
+		return;
+	}
+
+	if (test_type.is_key_of_type()) {
+		push_error(R"*("KeyOf" types cannot be used with the "is" operator. Test for "String" and use "in" with the accepted keys instead.)*", p_type_test->test_type);
 		return;
 	}
 
@@ -7434,6 +7523,11 @@ bool GDScriptAnalyzer::check_type_compatibility(const GDScriptParser::DataType &
 		if (valid && p_target.is_typed_callable_type() && p_source.is_typed_callable_type()) {
 			// Callables with an unknown signature are accepted (checked at runtime).
 			valid = is_callable_signature_compatible(p_target, p_source);
+		}
+		if (valid && p_target.is_key_of_type()) {
+			// `KeyOf[StructType]` only accepts the keys of another `KeyOf` that are all valid here. Constant strings are
+			// checked by `update_const_expression_builtin_type()`. A plain `String` is a "maybe compatible" downcast (unsafe).
+			valid = p_source.is_key_of_type() && is_key_of_compatible(p_target, p_source);
 		}
 		return valid;
 	}

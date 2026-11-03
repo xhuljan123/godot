@@ -160,6 +160,10 @@ String GDScriptFunction::_get_call_error(const String &p_where, const Variant **
 				last_struct_argument_error = nullptr;
 				return "Invalid type in " + p_where + ". The dictionary of argument " + itos(p_err.argument + 1) + " doesn't match the expected struct type.";
 			}
+			if (p_err.expected == Variant::STRING && (p_argptrs[p_err.argument]->get_type() == Variant::STRING || p_argptrs[p_err.argument]->get_type() == Variant::STRING_NAME)) {
+				// A string is only rejected by a `KeyOf[StructType]` parameter (the accepted keys were printed by the callee).
+				return "Invalid value in " + p_where + ". Argument " + itos(p_err.argument + 1) + " (\"" + p_argptrs[p_err.argument]->operator String().c_escape() + "\") is not one of the accepted keys.";
+			}
 			if (p_err.expected == Variant::DICTIONARY && p_argptrs[p_err.argument]->get_type() == p_err.expected) {
 				return "Invalid type in " + p_where + ". The dictionary of argument " + itos(p_err.argument + 1) + " (" + _get_var_type(p_argptrs[p_err.argument]) + ") does not have the same element type as the expected typed dictionary argument.";
 			}
@@ -586,6 +590,14 @@ Variant GDScriptFunction::call(GDScriptInstance *p_instance, const Variant **p_a
 					const String reason = argument_types[i].validate_struct(*p_args[i]);
 					_err_print_error(String(name).utf8().get_data(), String(source).utf8().get_data(), _initial_line,
 							vformat(R"*(Invalid argument %d for "%s()": expected "%s". %s)*", i + 1, name, argument_types[i].to_string(), reason), false, ERR_HANDLER_SCRIPT);
+				} else if (argument_types[i].is_key_of_type() && (p_args[i]->get_type() == Variant::STRING || p_args[i]->get_type() == Variant::STRING_NAME)) {
+					// List the accepted keys, since the generic error only mentions "String".
+					String keys;
+					for (int j = 0; j < argument_types[i].key_of_values.size(); j++) {
+						keys += (j > 0 ? ", \"" : "\"") + String(argument_types[i].key_of_values[j]) + "\"";
+					}
+					_err_print_error(String(name).utf8().get_data(), String(source).utf8().get_data(), _initial_line,
+							vformat(R"*(Invalid argument %d for "%s()": "%s" is not one of the accepted keys: %s.)*", i + 1, name, p_args[i]->operator String().c_escape(), keys), false, ERR_HANDLER_SCRIPT);
 				}
 				r_err.error = Callable::CallError::CALL_ERROR_INVALID_ARGUMENT;
 				r_err.argument = i;

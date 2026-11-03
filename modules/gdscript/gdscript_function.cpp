@@ -100,6 +100,16 @@ String GDScriptDataType::to_string() const {
 				}
 				return fields.is_empty() ? String("Struct[{}]") : vformat("Struct[{ %s }]", fields);
 			}
+			if (is_key_of_type()) {
+				String keys;
+				for (int i = 0; i < key_of_values.size(); i++) {
+					if (i > 0) {
+						keys += ", ";
+					}
+					keys += "\"" + String(key_of_values[i]) + "\"";
+				}
+				return vformat("KeyOf[%s]", keys);
+			}
 			return Variant::get_type_name(builtin_type);
 		}
 		case NATIVE:
@@ -126,6 +136,13 @@ bool GDScriptDataType::is_type(const Variant &p_variant, bool p_allow_implicit_c
 		} break;
 		case BUILTIN: {
 			Variant::Type var_type = p_variant.get_type();
+			if (is_key_of_type()) {
+				// `KeyOf[StructType]`: a `String` (or a `StringName` to convert) that is one of the struct keys.
+				if (var_type != Variant::STRING && !(p_allow_implicit_conversion && var_type == Variant::STRING_NAME)) {
+					return false;
+				}
+				return key_of_values.has(p_variant.operator StringName());
+			}
 			bool valid = builtin_type == var_type;
 			if (valid && builtin_type == Variant::ARRAY && has_container_element_type(0)) {
 				Array array = p_variant;

@@ -1,0 +1,16 @@
+GDTEST_OK
+foo
+bar
+bar
+name
+enabled
+size
+name String
+NAME
+["name", "size"]
+name = box
+size = 3
+2.0
+name
+bar
+size

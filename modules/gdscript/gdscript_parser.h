@@ -112,6 +112,12 @@ public:
 		// Used for the `StructRef` constructor and `assign()`, where unknown keys are errors.
 		bool struct_is_exact = false;
 
+		// Keys of a struct type (`KeyOf[StructType]`). A `String` (BUILTIN kind) that can only hold one of `key_of_values`.
+		// `key_of_struct` holds the struct type the keys come from (size 1), for display only.
+		bool is_key_of = false;
+		Vector<StringName> key_of_values;
+		Vector<DataType> key_of_struct;
+
 		StringName alias_name; // Set if this type comes from a type alias (`type Name = ...`). Used for display only.
 
 		// Callable signature (`Callable[int, String]`). At runtime it's a plain `Callable`, the signature is only checked statically.
@@ -229,6 +235,26 @@ public:
 
 		_FORCE_INLINE_ bool is_typed_callable_type() const { return is_typed_callable && kind == BUILTIN && builtin_type == Variant::CALLABLE && !is_meta_type; }
 
+		_FORCE_INLINE_ bool is_key_of_type() const { return is_key_of && kind == BUILTIN && builtin_type == Variant::STRING && !is_meta_type; }
+
+		// List of the accepted keys for messages, like `"foo", "bar"`.
+		String get_key_of_values_text() const {
+			String text;
+			for (int i = 0; i < key_of_values.size(); i++) {
+				if (i > 0) {
+					text += ", ";
+				}
+				text += "\"" + String(key_of_values[i]) + "\"";
+			}
+			return text;
+		}
+
+		void clear_key_of() {
+			is_key_of = false;
+			key_of_values.clear();
+			key_of_struct.clear();
+		}
+
 		_FORCE_INLINE_ int get_callable_required_arg_count() const { return callable_arg_types.size() - callable_default_arg_count; }
 
 		void clear_callable_signature() {
@@ -323,6 +349,9 @@ public:
 			struct_key_types = p_other.struct_key_types;
 			struct_key_optional = p_other.struct_key_optional;
 			struct_is_exact = p_other.struct_is_exact;
+			is_key_of = p_other.is_key_of;
+			key_of_values = p_other.key_of_values;
+			key_of_struct = p_other.key_of_struct;
 			alias_name = p_other.alias_name;
 			is_typed_callable = p_other.is_typed_callable;
 			callable_arg_types = p_other.callable_arg_types;
@@ -1339,6 +1368,7 @@ public:
 			STRUCT_MODIFIER_PARTIAL, // `Partial[StructType]`: all keys optional.
 			STRUCT_MODIFIER_REQUIRED, // `Required[StructType]`: all keys required.
 			STRUCT_MODIFIER_FROM_CLASS, // `StructFromClass[ClassType]`: keys from the class member variables.
+			STRUCT_MODIFIER_KEY_OF, // `KeyOf[StructType]`: a `String` that can only be one of the struct keys (not a struct type itself).
 		};
 		StructModifier struct_modifier = STRUCT_MODIFIER_NONE;
 		// Keys left as they are by `Partial[StructType, { key, other }]` and `Required[StructType, { key, other }]`.

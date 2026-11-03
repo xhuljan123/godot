@@ -1240,7 +1240,7 @@ static void _list_available_types(bool p_inherit_only, GDScriptParser::Completio
 		r_result.insert(variant_option.display, variant_option);
 
 		// Struct types and struct utility types.
-		static const char *struct_type_names[] = { "Struct", "Partial", "Required", "StructFromClass" };
+		static const char *struct_type_names[] = { "Struct", "Partial", "Required", "StructFromClass", "KeyOf" };
 		for (const char *struct_type_name : struct_type_names) {
 			EditorLanguage::CompletionOption struct_option(struct_type_name, EditorLanguage::CompletionKind::CLASS);
 			r_result.insert(struct_option.display, struct_option);
@@ -3196,6 +3196,18 @@ static void _find_enumeration_candidates(GDScriptParser::CompletionContext &p_co
 	}
 }
 
+// Suggests the accepted keys (as string literals) where a `KeyOf[StructType]` value is expected.
+static void _find_key_of_candidates(const GDScriptParser::DataType &p_type, const GDScriptParser::Node *p_existing, HashMap<String, EditorLanguage::CompletionOption> &r_result) {
+	if (!p_type.is_key_of_type()) {
+		return;
+	}
+	for (const StringName &key : p_type.key_of_values) {
+		EditorLanguage::CompletionOption option = _calculate_string_insertion(p_existing, key, Variant::STRING);
+		option.kind = EditorLanguage::CompletionKind::CONSTANT;
+		r_result.insert(option.display, option);
+	}
+}
+
 static void _list_call_arguments(GDScriptParser::CompletionContext &p_context, const GDScriptCompletionIdentifier &p_base, const GDScriptParser::CallNode *p_call, uint32_t p_argidx, bool p_static, HashMap<String, EditorLanguage::CompletionOption> &r_result, String &r_arghint) {
 	Variant base = p_base.value;
 	GDScriptParser::DataType base_type = p_base.type;
@@ -3230,6 +3242,9 @@ static void _list_call_arguments(GDScriptParser::CompletionContext &p_context, c
 
 					if (member.type == GDScriptParser::ClassNode::Member::FUNCTION) {
 						r_arghint = _make_arguments_hint(member.function, p_argidx);
+						if (p_argidx < member.function->parameters.size()) {
+							_find_key_of_candidates(member.function->parameters[p_argidx]->type_constraint, existing_argument, r_result);
+						}
 						return;
 					}
 				}
@@ -3769,6 +3784,11 @@ static void _find_call_arguments(GDScriptParser::CompletionContext &p_context, c
 			if (!type.enumeration.is_empty()) {
 				_find_enumeration_candidates(completion_context, type.enumeration, options);
 				r_forced = options.size() > 0;
+			} else if (type.type.is_key_of_type()) {
+				// `KeyOf[StructType]`: suggest the accepted keys first, then the other identifiers.
+				_find_key_of_candidates(type.type, static_cast<const GDScriptParser::AssignmentNode *>(completion_context.node)->assigned_value, options);
+				_find_identifiers(completion_context, false, true, options, 0);
+				r_forced = true;
 			} else {
 				_find_identifiers(completion_context, false, true, options, 0);
 				r_forced = true;

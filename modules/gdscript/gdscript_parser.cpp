@@ -3934,7 +3934,7 @@ GDScriptParser::TypeNode *GDScriptParser::parse_type(bool p_allow_void) {
 		push_multiline(true);
 	}
 
-	// Utility types: `Partial[StructType]`, `Required[StructType]` and `StructFromClass[ClassType]`.
+	// Utility types: `Partial[StructType]`, `Required[StructType]`, `StructFromClass[ClassType]` and `KeyOf[StructType]`.
 	TypeNode::StructModifier struct_modifier = TypeNode::STRUCT_MODIFIER_NONE;
 	if (type_element->name == SNAME("Partial")) {
 		struct_modifier = TypeNode::STRUCT_MODIFIER_PARTIAL;
@@ -3942,6 +3942,8 @@ GDScriptParser::TypeNode *GDScriptParser::parse_type(bool p_allow_void) {
 		struct_modifier = TypeNode::STRUCT_MODIFIER_REQUIRED;
 	} else if (type_element->name == SNAME("StructFromClass")) {
 		struct_modifier = TypeNode::STRUCT_MODIFIER_FROM_CLASS;
+	} else if (type_element->name == SNAME("KeyOf")) {
+		struct_modifier = TypeNode::STRUCT_MODIFIER_KEY_OF;
 	}
 	if (struct_modifier != TypeNode::STRUCT_MODIFIER_NONE && check(GDScriptTokenizer::Token::BRACKET_OPEN)) {
 		push_multiline(true); // The argument can be a multiline struct type.
@@ -3955,8 +3957,8 @@ GDScriptParser::TypeNode *GDScriptParser::parse_type(bool p_allow_void) {
 		}
 		if (argument != nullptr && match(GDScriptTokenizer::Token::COMMA)) {
 			// `Partial[StructType, { key, other }]`: keys to exclude (they keep their own optionality).
-			if (struct_modifier == TypeNode::STRUCT_MODIFIER_FROM_CLASS) {
-				push_error(R"("StructFromClass" takes a single type argument.)");
+			if (struct_modifier == TypeNode::STRUCT_MODIFIER_FROM_CLASS || struct_modifier == TypeNode::STRUCT_MODIFIER_KEY_OF) {
+				push_error(vformat(R"("%s" takes a single type argument.)", type_element->name));
 			} else if (consume(GDScriptTokenizer::Token::BRACE_OPEN, vformat(R"(Expected "{" with the keys to exclude after "%s[Type,".)", type_element->name))) {
 				HashSet<StringName> excluded;
 				while (!check(GDScriptTokenizer::Token::BRACE_CLOSE) && !is_at_end()) {
@@ -5035,6 +5037,14 @@ bool GDScriptParser::_export_annotations(AnnotationNode *p_annotation, Node *p_t
 
 		switch (export_type.kind) {
 			case GDScriptParser::DataType::BUILTIN:
+				if (export_type.is_key_of_type()) {
+					// `@export var key: KeyOf[StructType]`: a dropdown of the struct keys.
+					const PropertyInfo key_of_info = export_type.to_property_info(variable->identifier->name);
+					variable->export_info.type = key_of_info.type;
+					variable->export_info.hint = key_of_info.hint;
+					variable->export_info.hint_string = key_of_info.hint_string;
+					break;
+				}
 				variable->export_info.type = export_type.builtin_type;
 				variable->export_info.hint = PROPERTY_HINT_NONE;
 				variable->export_info.hint_string = String();
@@ -5622,6 +5632,12 @@ String GDScriptParser::DataType::to_string_expanded() const {
 				}
 				return vformat("Struct[{ %s }]", fields);
 			}
+			if (is_key_of_type()) {
+				if (!key_of_struct.is_empty()) {
+					return vformat("KeyOf[%s]", key_of_struct[0].to_string());
+				}
+				return vformat("KeyOf[%s]", get_key_of_values_text());
+			}
 			return Variant::get_type_name(builtin_type);
 		case NATIVE:
 			if (is_meta_type) {
@@ -5719,6 +5735,14 @@ PropertyInfo GDScriptParser::DataType::to_property_info(const String &p_name) co
 
 				result.hint = PROPERTY_HINT_DICTIONARY_TYPE;
 				result.hint_string = key_type.to_property_info_hint_string() + ";" + value_type.to_property_info_hint_string();
+			} else if (is_key_of_type()) {
+				// `KeyOf[StructType]`: shown as a dropdown of the keys in the inspector.
+				result.hint = PROPERTY_HINT_ENUM;
+				Vector<String> keys;
+				for (const StringName &key : key_of_values) {
+					keys.push_back(key);
+				}
+				result.hint_string = String(",").join(keys);
 			}
 			break;
 		case NATIVE:
