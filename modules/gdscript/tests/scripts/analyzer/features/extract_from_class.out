@@ -1,0 +1,9 @@
+GDTEST_OK
+foo=2 bar=[1, 2]
+2 [1, 2]
+2
+5 special
+GDScript
+1
+level
+[1]

@@ -78,7 +78,8 @@ class GDScriptAnalyzer {
 	Error resolve_class_inheritance(GDScriptParser::ClassNode *p_class, const GDScriptParser::Node *p_source = nullptr);
 	Error resolve_class_inheritance(GDScriptParser::ClassNode *p_class, bool p_recursive);
 	GDScriptParser::DataType resolve_datatype(GDScriptParser::TypeNode *p_type);
-	GDScriptParser::DataType make_struct_type_from_class(GDScriptParser::ClassNode *p_class, const GDScriptParser::Node *p_source);
+	GDScriptParser::DataType make_struct_type_from_class(GDScriptParser::ClassNode *p_class, const GDScriptParser::Node *p_source, bool p_exported_only = false);
+	static bool is_struct_extractable_export(const GDScriptParser::VariableNode *p_variable);
 	GDScriptParser::DataType infer_struct_type_from_literal(GDScriptParser::DictionaryNode *p_dictionary);
 	GDScriptParser::DataType infer_literal_value_type(GDScriptParser::ExpressionNode *p_value);
 	GDScriptParser::DataType reduce_infer_type_call(GDScriptParser::CallNode *p_call);

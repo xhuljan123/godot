@@ -1368,6 +1368,7 @@ public:
 			STRUCT_MODIFIER_PARTIAL, // `Partial[StructType]`: all keys optional.
 			STRUCT_MODIFIER_REQUIRED, // `Required[StructType]`: all keys required.
 			STRUCT_MODIFIER_FROM_CLASS, // `StructFromClass[ClassType]`: keys from the class member variables.
+			STRUCT_MODIFIER_EXTRACT_FROM_CLASS, // `ExtractFromClass[ClassType]`: required keys from the `@export` variables of the class.
 			STRUCT_MODIFIER_KEY_OF, // `KeyOf[StructType]`: a `String` that can only be one of the struct keys (not a struct type itself).
 		};
 		StructModifier struct_modifier = STRUCT_MODIFIER_NONE;

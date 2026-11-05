@@ -510,6 +510,16 @@ Dictionary GDScriptSyntaxHighlighter::_get_line_syntax_highlighting_impl(int p_l
 						col = global_function_color;
 					}
 				}
+			} else if (struct_utility_types.has(word)) {
+				// Struct type and struct utility types (e.g. `ExtractFromClass[Foo]`): only types when followed by a bracket,
+				// so a variable or function with the same name isn't highlighted.
+				int k = to;
+				while (k < line_length && is_whitespace(str[k])) {
+					k++;
+				}
+				if (k < line_length && str[k] == '[') {
+					col = struct_utility_type_color;
+				}
 			} else if (class_names.has(word)) {
 				col = class_names[word];
 			} else if (reserved_keywords.has(word)) {
@@ -847,6 +857,16 @@ void GDScriptSyntaxHighlighter::_update_cache() {
 	}
 	class_names[SNAME("Variant")] = basetype_color;
 	class_names[SNAME("void")] = basetype_color;
+
+	/* Struct types and struct utility types. */
+	struct_utility_type_color = basetype_color;
+	struct_utility_types.clear();
+	struct_utility_types.insert(SNAME("Struct"));
+	struct_utility_types.insert(SNAME("Partial"));
+	struct_utility_types.insert(SNAME("Required"));
+	struct_utility_types.insert(SNAME("StructFromClass"));
+	struct_utility_types.insert(SNAME("ExtractFromClass"));
+	struct_utility_types.insert(SNAME("KeyOf"));
 
 	/* Reserved words. */
 	const Color keyword_color = EDITOR_GET("text_editor/theme/highlighting/keyword_color");

@@ -682,9 +682,28 @@ Error GDScriptAnalyzer::resolve_class_inheritance(GDScriptParser::ClassNode *p_c
 	return err;
 }
 
+// Whether a member variable is an exported property that `ExtractFromClass[...]` makes a key for:
+// any `@export*` annotation, except `@export_tool_button` (an editor button, not data).
+// The annotations are checked by name too, since they're only applied once the variable is resolved
+// (and it may still be resolving, e.g. with a cyclic reference).
+bool GDScriptAnalyzer::is_struct_extractable_export(const GDScriptParser::VariableNode *p_variable) {
+	bool exported = p_variable->exported;
+	for (const GDScriptParser::AnnotationNode *annotation : p_variable->annotations) {
+		if (annotation->name == SNAME("@export_tool_button")) {
+			return false;
+		}
+		if (String(annotation->name).begins_with("@export")) {
+			exported = true;
+		}
+	}
+	return exported;
+}
+
 // Struct type with a key for each (non-static) member variable of a GDScript class, including inherited ones.
 // Variables without a default value are required keys, variables with one are optional. Used by `StructFromClass[...]` and `StructRef`.
-GDScriptParser::DataType GDScriptAnalyzer::make_struct_type_from_class(GDScriptParser::ClassNode *p_class, const GDScriptParser::Node *p_source) {
+// With `p_exported_only` (`ExtractFromClass[...]`), only `@export` variables become keys, and all of them are required,
+// since an exported property always has a value (like a snapshot of what the Inspector shows).
+GDScriptParser::DataType GDScriptAnalyzer::make_struct_type_from_class(GDScriptParser::ClassNode *p_class, const GDScriptParser::Node *p_source, bool p_exported_only) {
 	GDScriptParser::DataType result;
 	result.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
 	result.kind = GDScriptParser::DataType::BUILTIN;
@@ -702,6 +721,9 @@ GDScriptParser::DataType GDScriptAnalyzer::make_struct_type_from_class(GDScriptP
 			if (klass->members[i].type != GDScriptParser::ClassNode::Member::VARIABLE || klass->members[i].variable->is_static) {
 				continue;
 			}
+			if (p_exported_only && !is_struct_extractable_export(klass->members[i].variable)) {
+				continue;
+			}
 			resolve_class_member(klass, i, p_source);
 			const GDScriptParser::VariableNode *variable = klass->members[i].variable;
 			GDScriptParser::DataType key_type = variable->type_constraint;
@@ -711,7 +733,7 @@ GDScriptParser::DataType GDScriptAnalyzer::make_struct_type_from_class(GDScriptP
 			key_type.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
 			key_type.is_constant = false;
 			key_type.is_read_only = false;
-			const bool optional = variable->initializer != nullptr; // Has a default value, so it can be left out.
+			const bool optional = !p_exported_only && variable->initializer != nullptr; // Has a default value, so it can be left out.
 			const int existing = result.find_struct_key(variable->identifier->name);
 			if (existing >= 0) {
 				result.struct_key_types.write[existing] = key_type;
@@ -872,11 +894,14 @@ GDScriptParser::DataType GDScriptAnalyzer::resolve_datatype(GDScriptParser::Type
 		} else {
 			// `StructFromClass[ClassType]`: a key for each (non-static) member variable of a GDScript class,
 			// including inherited ones. Variables without a default value are required, the others are optional.
+			// `ExtractFromClass[ClassType]`: a required key for each `@export` variable of a GDScript class, including inherited ones.
+			const bool exported_only = p_type->struct_modifier == GDScriptParser::TypeNode::STRUCT_MODIFIER_EXTRACT_FROM_CLASS;
+			const char *modifier_name = exported_only ? "ExtractFromClass" : "StructFromClass";
 			if (argument_type.kind != GDScriptParser::DataType::CLASS || argument_type.class_type == nullptr) {
-				push_error(vformat(R"("StructFromClass" expects a GDScript class (e.g. a class extending "Resource"), but got "%s".)", argument_type.to_string()), argument);
+				push_error(vformat(R"("%s" expects a GDScript class (e.g. a class extending "Resource"), but got "%s".)", modifier_name, argument_type.to_string()), argument);
 				return bad_type;
 			}
-			result = make_struct_type_from_class(argument_type.class_type, p_type);
+			result = make_struct_type_from_class(argument_type.class_type, p_type, exported_only);
 		}
 
 		p_type->resolved_type = result;

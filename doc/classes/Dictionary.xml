@@ -166,6 +166,21 @@
 		};
 		[/csharp]
 		[/codeblocks]
+		In GDScript, [code]ExtractFromClass[ClassType][/code] is a struct type (a statically typed dictionary) with a required key for each variable of a GDScript class that has an [code]@export[/code] annotation (any [code]@export_*[/code] annotation except [annotation @GDScript.@export_tool_button]), including inherited ones, with the same type as the variable. Other variables are left out:
+		[codeblock]
+		class Foo extends Resource:
+			@export var foo := 1
+			@export var bar: Array[int]
+			var test := ["1", "2"] # Not exported: not a key.
+
+		# Same as `Struct[{ foo: int, bar: Array[int] }]`.
+		func save_foo(data: ExtractFromClass[Foo]) -&gt; void:
+			print(data.foo, data.bar)
+
+		func _ready():
+			save_foo({ foo = 2, bar = [1, 2] })
+			var patch: Partial[ExtractFromClass[Foo]] = { foo = 3 } # All keys optional.
+		[/codeblock]
 		[b]Note:[/b] Dictionaries are always passed by reference. To get a copy of a dictionary which can be modified independently of the original dictionary, use [method duplicate].
 		[b]Note:[/b] Erasing elements while iterating over dictionaries is [b]not[/b] supported and will result in unpredictable behavior.
 		[b]Note:[/b] In a boolean context, a dictionary will evaluate to [code]false[/code] if it's empty ([code]{}[/code]). Otherwise, a dictionary will always evaluate to [code]true[/code].
