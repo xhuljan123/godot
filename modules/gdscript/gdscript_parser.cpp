@@ -3934,7 +3934,7 @@ GDScriptParser::TypeNode *GDScriptParser::parse_type(bool p_allow_void) {
 		push_multiline(true);
 	}
 
-	// Utility types: `Partial[StructType]`, `Required[StructType]`, `StructFromClass[ClassType]`, `ExtractFromClass[ClassType]`, `KeysOfStruct[StructType]` and `KeyOf[StructType]`.
+	// Utility types: `Partial[StructType]`, `Required[StructType]`, `StructFromClass[ClassType]`, `ExtractFromClass[ClassType]`, `StructToVariant[StructType]` and `KeyOf[StructType]`.
 	TypeNode::StructModifier struct_modifier = TypeNode::STRUCT_MODIFIER_NONE;
 	if (type_element->name == SNAME("Partial")) {
 		struct_modifier = TypeNode::STRUCT_MODIFIER_PARTIAL;
@@ -3944,8 +3944,8 @@ GDScriptParser::TypeNode *GDScriptParser::parse_type(bool p_allow_void) {
 		struct_modifier = TypeNode::STRUCT_MODIFIER_FROM_CLASS;
 	} else if (type_element->name == SNAME("ExtractFromClass")) {
 		struct_modifier = TypeNode::STRUCT_MODIFIER_EXTRACT_FROM_CLASS;
-	} else if (type_element->name == SNAME("KeysOfStruct")) {
-		struct_modifier = TypeNode::STRUCT_MODIFIER_KEYS_OF_STRUCT;
+	} else if (type_element->name == SNAME("StructToVariant")) {
+		struct_modifier = TypeNode::STRUCT_MODIFIER_STRUCT_TO_VARIANT;
 	} else if (type_element->name == SNAME("KeyOf")) {
 		struct_modifier = TypeNode::STRUCT_MODIFIER_KEY_OF;
 	}
@@ -3961,7 +3961,7 @@ GDScriptParser::TypeNode *GDScriptParser::parse_type(bool p_allow_void) {
 		}
 		if (argument != nullptr && match(GDScriptTokenizer::Token::COMMA)) {
 			// `Partial[StructType, { key, other }]`: keys to exclude (they keep their own optionality).
-			if (struct_modifier == TypeNode::STRUCT_MODIFIER_FROM_CLASS || struct_modifier == TypeNode::STRUCT_MODIFIER_EXTRACT_FROM_CLASS || struct_modifier == TypeNode::STRUCT_MODIFIER_KEYS_OF_STRUCT || struct_modifier == TypeNode::STRUCT_MODIFIER_KEY_OF) {
+			if (struct_modifier == TypeNode::STRUCT_MODIFIER_FROM_CLASS || struct_modifier == TypeNode::STRUCT_MODIFIER_EXTRACT_FROM_CLASS || struct_modifier == TypeNode::STRUCT_MODIFIER_STRUCT_TO_VARIANT || struct_modifier == TypeNode::STRUCT_MODIFIER_KEY_OF) {
 				push_error(vformat(R"("%s" takes a single type argument.)", type_element->name));
 			} else if (consume(GDScriptTokenizer::Token::BRACE_OPEN, vformat(R"(Expected "{" with the keys to exclude after "%s[Type,".)", type_element->name))) {
 				HashSet<StringName> excluded;

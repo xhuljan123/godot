@@ -181,12 +181,12 @@
 			save_foo({ foo = 2, bar = [1, 2] })
 			var patch: Partial[ExtractFromClass[Foo]] = { foo = 3 } # All keys optional.
 		[/codeblock]
-		[code]KeysOfStruct[StructType][/code] is a struct type with the same keys as [code]StructType[/code] (each one still required or optional), but with [Variant] as the type of every value. Use it to accept the same keys with values of any type, such as raw or unvalidated data:
+		[code]StructToVariant[StructType][/code] is a struct type with the same keys as [code]StructType[/code] (each one still required or optional), but with [Variant] as the type of every value. Use it to accept the same keys with values of any type, such as raw or unvalidated data:
 		[codeblock]
 		type Foo = Struct[{ foo: int, bar: Array[String] }]
 
 		# Same as `Struct[{ foo: Variant, bar: Variant }]`.
-		func load_foo(raw: KeysOfStruct[Foo]) -&gt; void:
+		func load_foo(raw: StructToVariant[Foo]) -&gt; void:
 			print(raw.foo, raw.bar)
 
 		func _ready():

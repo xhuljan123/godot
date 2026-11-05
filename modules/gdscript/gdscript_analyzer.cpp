@@ -858,10 +858,10 @@ GDScriptParser::DataType GDScriptAnalyzer::resolve_datatype(GDScriptParser::Type
 			return result;
 		}
 
-		if (p_type->struct_modifier == GDScriptParser::TypeNode::STRUCT_MODIFIER_KEYS_OF_STRUCT) {
-			// `KeysOfStruct[StructType]`: the same keys (with the same optionality), but every value is `Variant`.
+		if (p_type->struct_modifier == GDScriptParser::TypeNode::STRUCT_MODIFIER_STRUCT_TO_VARIANT) {
+			// `StructToVariant[StructType]`: the same keys (with the same optionality), but every value is `Variant`.
 			if (!argument_type.is_struct_type()) {
-				push_error(vformat(R"("KeysOfStruct" expects a struct type, but got "%s".)", argument_type.to_string()), argument);
+				push_error(vformat(R"("StructToVariant" expects a struct type, but got "%s".)", argument_type.to_string()), argument);
 				return bad_type;
 			}
 			GDScriptParser::DataType variant_type = GDScriptParser::DataType::get_variant_type();

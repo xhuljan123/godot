@@ -1,5 +1,5 @@
 type Foo = Struct[{ foo: int, bar: Array[String] }]
-type RawFoo = KeysOfStruct[Foo]
+type RawFoo = StructToVariant[Foo]
 
 class Item extends Resource:
 	@export var weight := 1.0
@@ -7,5 +7,5 @@ class Item extends Resource:
 func test():
 	var missing: RawFoo = { foo = 1 }
 	var unknown: RawFoo = { foo = 1, bar = 2, baz = 3 }
-	var not_a_struct: KeysOfStruct[int]
-	var a_class: KeysOfStruct[Item]
+	var not_a_struct: StructToVariant[int]
+	var a_class: StructToVariant[Item]
