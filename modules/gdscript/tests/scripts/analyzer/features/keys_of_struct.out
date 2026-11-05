@@ -1,0 +1,10 @@
+GDTEST_OK
+foo=1 bar=<null>
+foo=2 bar=["a"]
+now a string 3.5
+2
+5
+false
+heavy 0
+0
+bar

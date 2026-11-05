@@ -866,6 +866,7 @@ void GDScriptSyntaxHighlighter::_update_cache() {
 	struct_utility_types.insert(SNAME("Required"));
 	struct_utility_types.insert(SNAME("StructFromClass"));
 	struct_utility_types.insert(SNAME("ExtractFromClass"));
+	struct_utility_types.insert(SNAME("KeysOfStruct"));
 	struct_utility_types.insert(SNAME("KeyOf"));
 
 	/* Reserved words. */

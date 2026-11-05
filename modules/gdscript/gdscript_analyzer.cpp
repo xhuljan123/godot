@@ -858,7 +858,24 @@ GDScriptParser::DataType GDScriptAnalyzer::resolve_datatype(GDScriptParser::Type
 			return result;
 		}
 
-		if (p_type->struct_modifier == GDScriptParser::TypeNode::STRUCT_MODIFIER_PARTIAL || p_type->struct_modifier == GDScriptParser::TypeNode::STRUCT_MODIFIER_REQUIRED) {
+		if (p_type->struct_modifier == GDScriptParser::TypeNode::STRUCT_MODIFIER_KEYS_OF_STRUCT) {
+			// `KeysOfStruct[StructType]`: the same keys (with the same optionality), but every value is `Variant`.
+			if (!argument_type.is_struct_type()) {
+				push_error(vformat(R"("KeysOfStruct" expects a struct type, but got "%s".)", argument_type.to_string()), argument);
+				return bad_type;
+			}
+			GDScriptParser::DataType variant_type = GDScriptParser::DataType::get_variant_type();
+			variant_type.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
+			result = argument_type;
+			result.alias_name = StringName();
+			result.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
+			result.is_constant = false;
+			result.is_read_only = false;
+			result.struct_is_exact = false;
+			for (int i = 0; i < result.struct_key_types.size(); i++) {
+				result.struct_key_types.write[i] = variant_type;
+			}
+		} else if (p_type->struct_modifier == GDScriptParser::TypeNode::STRUCT_MODIFIER_PARTIAL || p_type->struct_modifier == GDScriptParser::TypeNode::STRUCT_MODIFIER_REQUIRED) {
 			// `Partial[StructType]`: same keys, all optional (like `Partial<T>` in TypeScript).
 			// `Required[StructType]`: same keys, all required (like `Required<T>` in TypeScript).
 			// With a second argument (`Partial[StructType, { key, other }]`), the listed keys keep their own optionality.
