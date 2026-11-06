@@ -1,5 +1,5 @@
-# `mergeObjects()` merges two dictionaries into a new one, values from the second one win.
-# With structs, the result is a struct with the keys of both.
+# `mergeObjects()` merges two structs into a new one, values from the second one win.
+# The result is a struct with the keys of both.
 type Config = Struct[{ name: String, size: int }]
 
 func make_config(options: Partial[Config]) -> Config:
@@ -15,8 +15,16 @@ func test():
 	print(merged.a + 1, " ", merged.b.to_upper(), " ", merged.c[0])
 	print(merged)
 
-	# Plain dictionaries give a plain dictionary, and the arguments are not modified.
-	var base := { hp = 10 }
-	var extra := { hp = 20, mp = 5 }
+	# The arguments are not modified.
+	var base: Struct[{ hp: int }] = { hp = 10 }
+	var extra: Struct[{ hp: int, mp: int }] = { hp = 20, mp = 5 }
 	var result := mergeObjects(base, extra)
 	print(base, " ", extra, " ", result)
+
+	# The result type has the keys of both, with their types and default values.
+	var stats: Struct[{ hp: int, mp: int }] = result
+	print(stats.mp)
+	var with_default: Struct[{ level = 1 }] = {}
+	var leveled := mergeObjects(base, with_default)
+	var level: int = leveled.level
+	print(level)

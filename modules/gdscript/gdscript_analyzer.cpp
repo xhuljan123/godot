@@ -3554,11 +3554,11 @@ GDScriptParser::DataType GDScriptAnalyzer::reduce_object_argument(GDScriptParser
 }
 
 // `mergeObjects(defaults, overrides)`: a new dictionary with the keys of both, where values from `overrides` win.
-// If both arguments are structs (or dictionary literals), the result is a struct with the keys of both:
+// Both arguments must be structs (or dictionary literals with name keys, typed like with `inferType()`),
+// and the result is a struct with the keys of both:
 // - A key only in one of them keeps its type and optionality.
 // - A key required in `overrides` always comes from it, so it has the type from `overrides`.
 // - A key optional in `overrides` may come from either, so both types must match. It's required if `defaults` has it required.
-// Otherwise the result is a plain `Dictionary`.
 GDScriptParser::DataType GDScriptAnalyzer::reduce_merge_objects_call(GDScriptParser::CallNode *p_call) {
 	GDScriptParser::DataType result;
 	result.kind = GDScriptParser::DataType::BUILTIN;
@@ -3575,26 +3575,36 @@ GDScriptParser::DataType GDScriptAnalyzer::reduce_merge_objects_call(GDScriptPar
 	}
 
 	GDScriptParser::DataType argument_types[2];
+	bool valid_arguments = true;
 	for (int i = 0; i < 2; i++) {
 		argument_types[i] = reduce_object_argument(p_call->arguments[i]);
 		const GDScriptParser::DataType &type = argument_types[i];
-		if (type.is_hard_type() && !type.is_variant() && !(type.kind == GDScriptParser::DataType::BUILTIN && type.builtin_type == Variant::DICTIONARY)) {
-			push_error(vformat(R"*(Invalid argument for "mergeObjects()" function: argument %d should be "Dictionary" but is "%s".)*", i + 1, type.to_string()), p_call->arguments[i]);
-			return result;
+		if (!type.is_struct_type()) {
+			// Both arguments must be structs, so the keys (and the type of the result) are known.
+			String hint;
+			if (p_call->arguments[i]->type == GDScriptParser::Node::DICTIONARY) {
+				hint = " A dictionary literal is a struct only if all its keys are names or constant strings.";
+			} else if (type.kind == GDScriptParser::DataType::BUILTIN && type.builtin_type == Variant::DICTIONARY) {
+				hint = R"( Use a struct type (like "Struct[{ key: Type }]") or "inferType()".)";
+			}
+			push_error(vformat(R"*(Invalid argument for "mergeObjects()" function: argument %d should be a struct but is "%s".%s)*", i + 1, type.is_hard_type() ? type.to_string() : String("Variant"), hint), p_call->arguments[i]);
+			valid_arguments = false;
+			continue;
 		}
 #ifdef DEBUG_ENABLED
-		if (!type.is_hard_type() || type.is_variant()) {
+		if (!type.is_hard_type()) {
+			// A struct type known from an untyped value: the shape is only checked at runtime.
 			mark_node_unsafe(p_call->arguments[i]);
-			parser->push_warning(p_call->arguments[i], GDScriptWarning::UNSAFE_CALL_ARGUMENT, itos(i + 1), "function", p_call->function_name, "Dictionary", type.to_string_strict());
+			parser->push_warning(p_call->arguments[i], GDScriptWarning::UNSAFE_CALL_ARGUMENT, itos(i + 1), "function", p_call->function_name, type.to_string(), type.to_string_strict());
 		}
 #endif // DEBUG_ENABLED
+	}
+	if (!valid_arguments) {
+		return result;
 	}
 
 	const GDScriptParser::DataType &defaults = argument_types[0];
 	const GDScriptParser::DataType &overrides = argument_types[1];
-	if (!defaults.is_struct_type() || !overrides.is_struct_type()) {
-		return result;
-	}
 
 	result.is_struct = true;
 	for (int i = 0; i < defaults.struct_keys.size(); i++) {

@@ -9,3 +9,8 @@ func test():
 	var not_a_dictionary := mergeObjects(1, {})
 	var too_few := mergeObjects({})
 	var config: Config = mergeObjects({ name: "a" }, {})
+	var plain: Dictionary = {}
+	var with_plain := mergeObjects(plain, {})
+	var untyped = {}
+	var with_untyped := mergeObjects({}, untyped)
+	var int_keys := mergeObjects({ 1: "a" }, {})

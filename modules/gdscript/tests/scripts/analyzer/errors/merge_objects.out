@@ -1,6 +1,9 @@
 GDTEST_ANALYZER_ERROR
 >> ERROR at line 6: Cannot merge key "value": it is "int" in the default object but "String" in the object to merge.
 >> ERROR at line 8: Key "z" does not exist in struct type "Struct[{ x: int, y: String }]".
->> ERROR at line 9: Invalid argument for "mergeObjects()" function: argument 1 should be "Dictionary" but is "int".
+>> ERROR at line 9: Invalid argument for "mergeObjects()" function: argument 1 should be a struct but is "int".
 >> ERROR at line 10: Too few arguments for "mergeObjects()" call. Expected at least 2 but received 1.
 >> ERROR at line 11: Cannot assign a value of type Struct[{ name: String }] to variable "config" with specified type Config. Key "size" is required but missing.
+>> ERROR at line 13: Invalid argument for "mergeObjects()" function: argument 1 should be a struct but is "Dictionary". Use a struct type (like "Struct[{ key: Type }]") or "inferType()".
+>> ERROR at line 15: Invalid argument for "mergeObjects()" function: argument 2 should be a struct but is "Variant". Use a struct type (like "Struct[{ key: Type }]") or "inferType()".
+>> ERROR at line 16: Invalid argument for "mergeObjects()" function: argument 1 should be a struct but is "Dictionary". A dictionary literal is a struct only if all its keys are names or constant strings.

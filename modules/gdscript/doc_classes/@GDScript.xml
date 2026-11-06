@@ -205,7 +205,13 @@
 				func _ready():
 					print(make_config({ size: 5 })) # Prints { &amp;"name": "default", &amp;"size": 5 }
 				[/codeblock]
-				If both arguments are structs (or dictionary literals, which are typed like with [method inferType]), the result is statically typed as a struct with the keys of both. A key that is required in [param overrides] has the type from [param overrides]. A key that is optional in [param overrides] may come from either argument, so it must have the same type in both, and it's required if it's required in [param defaults]. Otherwise, the result is an untyped [Dictionary].
+				Both arguments must be structs: values of a struct type, or dictionary literals whose keys are all names or constant strings (typed like with [method inferType]). Plain [Dictionary] and untyped values are errors. The result is statically typed as a struct with the keys of both:
+				[codeblock]
+				var a: Struct[{ name: String, size: int }] = { name = "a", size = 1 }
+				var b: Struct[{ size: int, color: Color }] = { size = 2, color = Color.RED }
+				var merged := mergeObjects(a, b) # Struct[{ name: String, size: int, color: Color }]
+				[/codeblock]
+				A key that is only in one argument keeps its type, whether it's optional, and its default value. A key that is required in [param overrides] has the type from [param overrides]. A key that is optional in [param overrides] may come from either argument, so it must have the same type in both, and it's required if it's required in [param defaults].
 			</description>
 		</method>
 		<method name="ord">
