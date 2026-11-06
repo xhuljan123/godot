@@ -181,7 +181,7 @@
 			foo.bar += 1 # Starts from the default value.
 			print(foo.bar) # Prints 2.
 		[/codeblock]
-		Array and dictionary default values are copied each time a missing key is read, so modifying the value that was read doesn't change the default value (or the struct). [code]Partial[...][/code] keeps the default values, and [code]Required[...][/code] removes them, since every key is then required.
+		A key of a struct type can default to a struct literal, like [code]options: MoveOptions = {}[/code] or [code]options: MoveOptions = { speed = 2 }[/code]. The literal is checked against the key's struct type, and the keys it leaves out use that struct type's own default values. Array and dictionary default values are copied each time a missing key is read, so modifying the value that was read doesn't change the default value (or the struct). [code]Partial[...][/code] keeps the default values, and [code]Required[...][/code] removes them, since every key is then required.
 		In GDScript, [code]ExtractFromClass[ClassType][/code] is a struct type (a statically typed dictionary) with a required key for each variable of a GDScript class that has an [code]@export[/code] annotation (any [code]@export_*[/code] annotation except [annotation @GDScript.@export_tool_button]), including inherited ones, with the same type as the variable. Other variables are left out:
 		[codeblock]
 		class Foo extends Resource:

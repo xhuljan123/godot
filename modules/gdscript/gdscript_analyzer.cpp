@@ -3926,8 +3926,16 @@ bool GDScriptAnalyzer::resolve_struct_key_default(const GDScriptParser::TypeNode
 	}
 
 	if (!expression->is_constant) {
-		push_error(vformat(R"(The default value of struct key "%s" must be a constant expression.)", p_field.name), expression);
-		return false;
+		// Array and dictionary literals (`key: Other = {}`, `key: Other = { a = 1 }`, `tags: Array[String] = []`) are
+		// never marked constant when reduced, so fold them here, like the initializer of a `const`.
+		bool is_reduced = false;
+		const Variant value = make_expression_reduced_value(expression, is_reduced);
+		if (!is_reduced) {
+			push_error(vformat(R"(The default value of struct key "%s" must be a constant expression.)", p_field.name), expression);
+			return false;
+		}
+		expression->is_constant = true;
+		expression->reduced_value = value;
 	}
 
 	GDScriptParser::DataType value_type = expression->type_constraint;

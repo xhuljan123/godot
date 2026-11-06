@@ -9,6 +9,14 @@ type Foo = Struct[{
 type Config = Struct[{ name = "default", tags: Array[String] = [], offset = { x = 0, y = 0 } }]
 type WithSpread = Struct[{ ...Foo, extra = true }]
 
+# A struct key can default to a struct literal: the missing keys use the defaults of the nested struct type.
+type Inner = Struct[{ key1: int = 1 }]
+type Outer = Struct[{
+	bar: Inner = {}
+	baz: Inner = { key1: 5 }
+	qux: Inner = { key1 = 7 }
+}]
+
 const PRESET: Foo = { test = "preset" }
 
 func describe(foo: Foo) -> String:
@@ -35,6 +43,11 @@ func test():
 	tags.append("b")
 	print(tags, " ", config.tags)
 	print(typeof(config.offset) == TYPE_DICTIONARY)
+
+	# Nested struct defaults.
+	var outer: Outer = {}
+	print(outer.bar.key1, " ", outer.baz.key1, " ", outer.qux.key1)
+	print(outer.has("bar"))
 
 	# Spread, constants, utility types and `parseOptional()`.
 	var spread: WithSpread = { test = "s" }

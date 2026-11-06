@@ -3,5 +3,8 @@ GDTEST_ANALYZER_ERROR
 >> ERROR at line 2: Cannot infer the type of struct key "b" from its default value. Add a type: "b: Type = ...".
 >> ERROR at line 3: Cannot use a value of type "String" as the default value of struct key "c" of type "int".
 >> ERROR at line 4: Cannot use a value of type "null" as the default value of struct key "d" of type "int".
->> ERROR at line 8: Missing required key "test" for struct type "Foo".
->> ERROR at line 9: Cannot assign a value of type "String" to key "bar" of type "int".
+>> ERROR at line 7: Key "key2" does not exist in struct type "Inner".
+>> ERROR at line 8: The default value of struct key "f" must be a constant expression.
+>> ERROR at line 9: Missing required key "test" for struct type "Foo".
+>> ERROR at line 12: Missing required key "test" for struct type "Foo".
+>> ERROR at line 13: Cannot assign a value of type "String" to key "bar" of type "int".
