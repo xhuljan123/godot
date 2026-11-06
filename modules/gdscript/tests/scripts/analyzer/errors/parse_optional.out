@@ -1,0 +1,8 @@
+GDTEST_ANALYZER_ERROR
+>> ERROR at line 6: Invalid argument for "parseOptional()" function: argument 2 should be "int" (the type of argument 1) but is "String".
+>> ERROR at line 9: Invalid argument for "parseOptional()" function: argument 2 should be "float" (the type of argument 1) but is "int".
+>> ERROR at line 10: Invalid argument for "parseOptional()" function: argument 2 cannot be "null" because argument 1 is "int". It must be of the same type.
+>> ERROR at line 12: Invalid argument for "parseOptional()" function: argument 2 should be "Item" (the type of argument 1) but is "Node".
+>> ERROR at line 13: Too few arguments for "parseOptional()" call. Expected at least 2 but received 1.
+>> ERROR at line 14: Too many arguments for "parseOptional()" call. Expected at most 2 but received 3.
+>> ERROR at line 15: Invalid argument for "parseOptional()" function: argument 1 should be a value but is the type "int".

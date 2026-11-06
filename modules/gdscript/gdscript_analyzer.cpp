@@ -3585,6 +3585,98 @@ GDScriptParser::DataType GDScriptAnalyzer::reduce_merge_objects_call(GDScriptPar
 	return result;
 }
 
+// `parseOptional(value, default_value)`: `value if value != null else default_value`.
+// The type of `value` decides the type of the call, and `default_value` must have that same type:
+// - It must be assignable to it without a conversion (a subtype is fine, `int` for a `float` isn't),
+//   except for constants that convert without loss (`2` for a `float` becomes `2.0`, a string for a `KeyOf` type).
+// - `null` is only allowed if `value` is an object.
+// - If `value` is untyped (or `Variant`), there's nothing to check and the call is untyped too.
+// With two constants, the call is evaluated during analysis.
+GDScriptParser::DataType GDScriptAnalyzer::reduce_parse_optional_call(GDScriptParser::CallNode *p_call) {
+	static const StringName function_name = SNAME("parseOptional");
+
+	if (p_call->arguments.size() != 2) {
+		if (p_call->arguments.size() < 2) {
+			push_error(vformat(R"*(Too few arguments for "%s()" call. Expected at least 2 but received %d.)*", function_name, p_call->arguments.size()), p_call);
+		} else {
+			push_error(vformat(R"*(Too many arguments for "%s()" call. Expected at most 2 but received %d.)*", function_name, p_call->arguments.size()), p_call->arguments[2]);
+		}
+		return GDScriptParser::DataType::get_variant_type();
+	}
+
+	GDScriptParser::ExpressionNode *value = p_call->arguments[0];
+	GDScriptParser::ExpressionNode *default_value = p_call->arguments[1];
+	if (value == nullptr || default_value == nullptr) {
+		return GDScriptParser::DataType::get_variant_type();
+	}
+
+	GDScriptParser::DataType value_type = value->type_constraint;
+	if (value_type.is_meta_type) {
+		push_error(vformat(R"*(Invalid argument for "%s()" function: argument 1 should be a value but is the type "%s".)*", function_name, value_type.to_string()), value);
+		return GDScriptParser::DataType::get_variant_type();
+	}
+
+	const bool value_is_null = value->is_constant && value->reduced_value.get_type() == Variant::NIL;
+	const bool value_is_object = value_type.kind == GDScriptParser::DataType::NATIVE || value_type.kind == GDScriptParser::DataType::SCRIPT || value_type.kind == GDScriptParser::DataType::CLASS || (value_type.kind == GDScriptParser::DataType::BUILTIN && value_type.builtin_type == Variant::OBJECT);
+	GDScriptParser::DataType result = value_type;
+
+	if (value_is_null) {
+		// `parseOptional(null, x)` is always `x`.
+		result = default_value->type_constraint;
+	} else if (value_type.is_set() && value_type.is_hard_type() && !value_type.is_variant()) {
+		// Literals are typed from the first argument, like in an assignment (`parseOptional(ids, [])` with `ids: Array[int]`).
+		update_literal_for_expected_type(default_value, value_type);
+		const GDScriptParser::DataType &initial_default_type = default_value->type_constraint;
+		if (default_value->is_constant && (value_type.is_key_of_type() || (value_type.kind == GDScriptParser::DataType::BUILTIN && value_type.builtin_type == Variant::FLOAT && initial_default_type.kind == GDScriptParser::DataType::BUILTIN && initial_default_type.builtin_type == Variant::INT))) {
+			update_const_expression_builtin_type(default_value, value_type, "pass");
+		}
+		const GDScriptParser::DataType default_type = default_value->type_constraint;
+		const bool default_is_null = default_value->is_constant && default_value->reduced_value.get_type() == Variant::NIL;
+
+		if (default_is_null) {
+			if (!value_is_object) {
+				push_error(vformat(R"*(Invalid argument for "%s()" function: argument 2 cannot be "null" because argument 1 is "%s". It must be of the same type.)*", function_name, value_type.to_string()), default_value);
+			}
+		} else if (!default_type.is_set() || !default_type.is_hard_type() || default_type.is_variant()) {
+#ifdef DEBUG_ENABLED
+			// Can't be checked statically, so this is unsafe.
+			mark_node_unsafe(default_value);
+			parser->push_warning(default_value, GDScriptWarning::UNSAFE_CALL_ARGUMENT, "2", "function", function_name, value_type.to_string(), default_type.to_string_strict());
+#endif // DEBUG_ENABLED
+			if (value_is_object) {
+				// An object can be `null`, so the result may be the unchecked default value:
+				// keep the type for completion, but not as a hard type (assigning it is checked at runtime).
+				result.type_source = GDScriptParser::DataType::INFERRED;
+			}
+		} else if (!is_type_compatible(value_type, default_type, false, default_value)) {
+			String struct_reason;
+			if (is_struct_mismatch(value_type, default_type)) {
+				is_struct_compatible(value_type, default_type, &struct_reason);
+				struct_reason = " " + struct_reason;
+			}
+			push_error(vformat(R"*(Invalid argument for "%s()" function: argument 2 should be "%s" (the type of argument 1) but is "%s".%s)*", function_name, value_type.to_string(), default_type.to_string(), struct_reason), default_value);
+		} else if (is_struct_assignment_unsafe(value_type, default_type)) {
+			// The struct shape is validated at runtime.
+			mark_node_unsafe(default_value);
+		}
+	}
+
+	if (!result.is_set()) {
+		result = GDScriptParser::DataType::get_variant_type();
+	}
+	result.is_constant = false;
+	result.is_read_only = false;
+
+	if (value->is_constant && default_value->is_constant) {
+		bool valid = false;
+		Variant is_not_null;
+		Variant::evaluate(Variant::OP_NOT_EQUAL, value->reduced_value, Variant(), is_not_null, valid);
+		p_call->is_constant = true;
+		p_call->reduced_value = (!valid || is_not_null.booleanize()) ? value->reduced_value : default_value->reduced_value;
+	}
+	return result;
+}
+
 // Structural typing: `p_source` can be used as `p_target` if it has every required key of `p_target`
 // with compatible types. Extra keys in `p_source` are allowed, unless `p_target` is exact.
 // Typed callables (`Callable[int, String]`).
@@ -4404,6 +4496,10 @@ void GDScriptAnalyzer::reduce_call(GDScriptParser::CallNode *p_call, bool p_is_a
 		} else if (function_name == SNAME("mergeObjects") && GDScriptUtilityFunctions::function_exists(function_name)) {
 			// `mergeObjects(defaults, overrides)`: merging two structs gives a struct with the keys of both.
 			p_call->type_constraint = reduce_merge_objects_call(p_call);
+			return;
+		} else if (function_name == SNAME("parseOptional") && GDScriptUtilityFunctions::function_exists(function_name)) {
+			// `parseOptional(value, default_value)`: typed as `value`, and `default_value` must have the same type.
+			p_call->type_constraint = reduce_parse_optional_call(p_call);
 			return;
 		} else if (GDScriptUtilityFunctions::function_exists(function_name)) {
 			MethodInfo function_info = GDScriptUtilityFunctions::get_function_info(function_name);

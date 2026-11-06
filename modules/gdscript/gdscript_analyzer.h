@@ -85,6 +85,7 @@ class GDScriptAnalyzer {
 	GDScriptParser::DataType reduce_infer_type_call(GDScriptParser::CallNode *p_call);
 	GDScriptParser::DataType reduce_object_argument(GDScriptParser::ExpressionNode *p_argument);
 	GDScriptParser::DataType reduce_merge_objects_call(GDScriptParser::CallNode *p_call);
+	GDScriptParser::DataType reduce_parse_optional_call(GDScriptParser::CallNode *p_call);
 
 	void resolve_annotation(GDScriptParser::AnnotationNode *p_annotation);
 	void resolve_class_member(GDScriptParser::ClassNode *p_class, const StringName &p_name, const GDScriptParser::Node *p_source = nullptr);

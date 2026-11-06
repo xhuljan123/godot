@@ -471,6 +471,18 @@ struct GDScriptUtilityFunctionsDefinitions {
 		*r_ret = defaults.merged(overrides, true);
 	}
 
+	// `value if value != null else default_value`. Both arguments are always evaluated.
+	// The analyzer requires `default_value` to have the type of `value` and gives the call that type
+	// (see `GDScriptAnalyzer::reduce_parse_optional_call()`).
+	static inline void parseOptional(Variant *r_ret, const Variant **p_args, int p_arg_count, Callable::CallError &r_error) {
+		DEBUG_VALIDATE_ARG_COUNT(2, 2);
+		// Same check as `value != null` in GDScript.
+		bool valid = false;
+		Variant is_not_null;
+		Variant::evaluate(Variant::OP_NOT_EQUAL, *p_args[0], Variant(), is_not_null, valid);
+		*r_ret = (!valid || is_not_null.booleanize()) ? *p_args[0] : *p_args[1];
+	}
+
 	static inline void is_instance_of(Variant *r_ret, const Variant **p_args, int p_arg_count, Callable::CallError &r_error) {
 		DEBUG_VALIDATE_ARG_COUNT(2, 2);
 
@@ -611,6 +623,8 @@ void GDScriptUtilityFunctions::register_functions() {
 	REGISTER_FUNC( inferType,      false, RET(DICTIONARY),    ARGS( ARG("value", DICTIONARY)        ), false, varray(     ));
 	REGISTER_FUNC( mergeObjects,   false, RET(DICTIONARY),    ARGS( ARG("defaults", DICTIONARY),
 																	ARG("overrides", DICTIONARY)   ), false, varray(     ));
+	REGISTER_FUNC( parseOptional,  true,  RETVAR,             ARGS( ARGVAR("value"),
+																	ARGVAR("default_value")        ), false, varray(     ));
 	/* clang-format on */
 }
 
