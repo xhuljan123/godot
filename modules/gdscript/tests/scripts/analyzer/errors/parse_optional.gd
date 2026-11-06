@@ -13,3 +13,6 @@ func test():
 	print(parseOptional(count))
 	print(parseOptional(count, 1, 2))
 	print(parseOptional(int, 1))
+	var foo: Struct[{ bar?: int }] = {}
+	var test := parseOptional(foo.bar, '0')
+	var other := parseOptional(foo.bar, null)

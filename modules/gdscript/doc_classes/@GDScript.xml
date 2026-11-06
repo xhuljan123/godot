@@ -227,13 +227,17 @@
 			<description>
 				Returns [param value] if it isn't [code]null[/code], otherwise returns [param default_value]. Same as [code]value if value != null else default_value[/code].
 				[codeblock]
-				var player_name: String = parseOptional(data.get("name"), "Unknown")
+				type Options = Struct[{ size?: int, label?: String }]
+
+				func make_button(options: Options) -&gt; void:
+					var size := parseOptional(options.size, 16) # Typed as int, 16 if the key is missing.
+					var label := parseOptional(options.label, "OK") # Typed as String.
 
 				func find_target(target: Node) -&gt; Node:
 					return parseOptional(target, get_parent()) # Typed as Node.
 				[/codeblock]
-				The result is statically typed as [param value], and [param default_value] must be of the same type (or a subtype of it), so [code]parseOptional(count, "2")[/code] is an error when [code]count[/code] is an [int]. A constant [int] can be passed for a [float] (it becomes a [float]), and literal arrays and dictionaries are typed from [param value], like in an assignment. [code]null[/code] can only be passed as [param default_value] if [param value] is an object. If [param value] is untyped, the result is untyped too.
-				[b]Note:[/b] Values of types such as [int], [String] or typed [Array]s are never [code]null[/code] (a variable of these types without a value has the type's default value, like [code]0[/code]), so [param value] is always returned for them. [code]parseOptional()[/code] is mostly useful with objects and untyped or [Variant] values.
+				The result is statically typed as [param value], and [param default_value] must be of the same type (or a subtype of it), so [code]parseOptional(count, "2")[/code] is an error when [code]count[/code] is an [int]. A constant [int] can be passed for a [float] (it becomes a [float]), and literal arrays and dictionaries are typed from [param value], like in an assignment. [code]null[/code] can only be passed as [param default_value] if [param value] is an object. If [param value] is untyped, the result is untyped too. If [param value] reads an optional struct key (like [code]options.size[/code] with [code]size?: int[/code]), the declared type of the key is used, since a missing key gives [code]null[/code].
+				[b]Note:[/b] Values of types such as [int], [String] or typed [Array]s are never [code]null[/code] (a variable of these types without a value has the type's default value, like [code]0[/code]), so [param value] is always returned for them. [code]parseOptional()[/code] is mostly useful with optional struct keys, objects, and untyped or [Variant] values.
 				[b]Note:[/b] Both arguments are always evaluated, even if [param default_value] isn't used.
 			</description>
 		</method>

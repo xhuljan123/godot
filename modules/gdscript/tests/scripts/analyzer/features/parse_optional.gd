@@ -43,4 +43,11 @@ func test():
 	var same_ids := parseOptional(ids, [])
 	print(same_ids, " ", same_ids.get_typed_builtin() == TYPE_INT)
 
+	# Optional struct keys: a missing key is `null`, so the default value is used,
+	# and the call has the declared key type.
+	var options: Struct[{ size?: int, label?: String }] = { label = "big" }
+	var size := parseOptional(options.size, 10)
+	var label := parseOptional(options["label"], "none")
+	print(size, " ", label, " ", typeof(size) == TYPE_INT)
+
 	print(NAME)

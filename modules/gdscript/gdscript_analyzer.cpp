@@ -3591,6 +3591,9 @@ GDScriptParser::DataType GDScriptAnalyzer::reduce_merge_objects_call(GDScriptPar
 //   except for constants that convert without loss (`2` for a `float` becomes `2.0`, a string for a `KeyOf` type).
 // - `null` is only allowed if `value` is an object.
 // - If `value` is untyped (or `Variant`), there's nothing to check and the call is untyped too.
+// - If `value` reads an optional struct key (`data.key` with `key?: int`), its declared type is used:
+//   reading it alone gives a weak type since a missing key is `null`, but that's the case `default_value` covers,
+//   so the call has the key's type as a hard type (`var count := parseOptional(data.count, 0)` is an `int`).
 // With two constants, the call is evaluated during analysis.
 GDScriptParser::DataType GDScriptAnalyzer::reduce_parse_optional_call(GDScriptParser::CallNode *p_call) {
 	static const StringName function_name = SNAME("parseOptional");
@@ -3614,6 +3617,18 @@ GDScriptParser::DataType GDScriptAnalyzer::reduce_parse_optional_call(GDScriptPa
 	if (value_type.is_meta_type) {
 		push_error(vformat(R"*(Invalid argument for "%s()" function: argument 1 should be a value but is the type "%s".)*", function_name, value_type.to_string()), value);
 		return GDScriptParser::DataType::get_variant_type();
+	}
+
+	// Optional struct key: use the declared key type instead of the weak read type (see `get_struct_key_read_type()`).
+	bool value_is_optional_key = false;
+	const int key_index = get_struct_key_index(value);
+	if (key_index >= 0) {
+		const GDScriptParser::DataType &struct_type = static_cast<GDScriptParser::SubscriptNode *>(value)->base->type_constraint;
+		if (struct_type.is_hard_type() && struct_type.struct_key_optional[key_index]) {
+			value_is_optional_key = true;
+			value_type = struct_type.struct_key_types[key_index];
+			value_type.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
+		}
 	}
 
 	const bool value_is_null = value->is_constant && value->reduced_value.get_type() == Variant::NIL;
@@ -3643,8 +3658,8 @@ GDScriptParser::DataType GDScriptAnalyzer::reduce_parse_optional_call(GDScriptPa
 			mark_node_unsafe(default_value);
 			parser->push_warning(default_value, GDScriptWarning::UNSAFE_CALL_ARGUMENT, "2", "function", function_name, value_type.to_string(), default_type.to_string_strict());
 #endif // DEBUG_ENABLED
-			if (value_is_object) {
-				// An object can be `null`, so the result may be the unchecked default value:
+			if (value_is_object || value_is_optional_key) {
+				// An object or a missing optional key can be `null`, so the result may be the unchecked default value:
 				// keep the type for completion, but not as a hard type (assigning it is checked at runtime).
 				result.type_source = GDScriptParser::DataType::INFERRED;
 			}
