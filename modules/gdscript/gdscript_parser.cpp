@@ -5625,6 +5625,19 @@ String GDScriptParser::DataType::to_string() const {
 	return to_string_expanded();
 }
 
+// A type from a type alias shows both the alias name and the aliased type: `Foo (Struct[{ foo: int, bar: String }])`.
+// Other types are shown as with `to_string()`.
+String GDScriptParser::DataType::to_string_with_alias() const {
+	if (alias_name == StringName() || is_meta_type) {
+		return to_string();
+	}
+	const String expanded = to_string_expanded();
+	if (expanded == String(alias_name)) {
+		return expanded;
+	}
+	return vformat("%s (%s)", alias_name, expanded);
+}
+
 String GDScriptParser::DataType::to_string_expanded() const {
 	switch (kind) {
 		case VARIANT:

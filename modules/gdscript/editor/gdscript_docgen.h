@@ -43,6 +43,7 @@ class GDScriptDocGen {
 	static String _get_gdscript_name(const GDScript *p_script);
 
 	static void _doctype_from_datatype(const DataType &p_datatype, String &r_type, String &r_enum, bool p_is_return = false);
+	static void _doctype_from_datatype_with_alias(const DataType &p_datatype, String &r_type, String &r_enum, bool p_is_return = false);
 	static String _docvalue_from_variant(const Variant &p_variant, int p_recursion_level = 1);
 
 	static void _generate_docs(GDScript *p_script, const GDP::ClassNode *p_class);
@@ -50,5 +51,6 @@ class GDScriptDocGen {
 public:
 	static void generate_docs(GDScript *p_script, const GDP::ClassNode *p_class);
 	static void doctype_from_datatype(const DataType &p_datatype, String &r_type, String &r_enum, bool p_is_return = false);
+	static void doctype_from_datatype_with_alias(const DataType &p_datatype, String &r_type, String &r_enum, bool p_is_return = false);
 	static String docvalue_from_expression(const GDP::ExpressionNode *p_expression);
 };

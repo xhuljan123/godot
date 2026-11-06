@@ -208,7 +208,7 @@ void ExtendGDScriptParser::parse_class_symbol(const GDScriptParser::ClassNode *p
 				}
 				symbol.detail += "var " + m.variable->identifier->name;
 				if (m.get_datatype().is_hard_type()) {
-					symbol.detail += ": " + m.get_datatype().to_string();
+					symbol.detail += ": " + m.get_datatype().to_string_with_alias();
 				}
 				if (m.variable->initializer != nullptr && m.variable->initializer->is_constant) {
 					symbol.detail += " = " + m.variable->initializer->reduced_value.to_json_string();
@@ -322,7 +322,7 @@ void ExtendGDScriptParser::parse_class_symbol(const GDScriptParser::ClassNode *p
 					param_symbol.script_path = path;
 					param_symbol.detail = "var " + param_symbol.name;
 					if (param->type_constraint.is_hard_type()) {
-						param_symbol.detail += ": " + param->type_constraint.to_string();
+						param_symbol.detail += ": " + param->type_constraint.to_string_with_alias();
 					}
 					symbol.children.push_back(param_symbol);
 				}
@@ -433,7 +433,7 @@ void ExtendGDScriptParser::parse_function_symbol(const GDScriptParser::FunctionN
 		}
 		parameters += String(parameter->identifier->name);
 		if (parameter->type_constraint.is_hard_type()) {
-			parameters += ": " + parameter->type_constraint.to_string();
+			parameters += ": " + parameter->type_constraint.to_string_with_alias();
 		}
 		if (parameter->initializer != nullptr) {
 			parameters += " = " + parameter->initializer->reduced_value.to_json_string();
@@ -444,7 +444,7 @@ void ExtendGDScriptParser::parse_function_symbol(const GDScriptParser::FunctionN
 			parameters += ", ";
 		}
 		const ParameterNode *rest_param = p_func->rest_parameter;
-		parameters += "..." + rest_param->identifier->name + ": " + rest_param->type_constraint.to_string();
+		parameters += "..." + rest_param->identifier->name + ": " + rest_param->type_constraint.to_string_with_alias();
 	}
 	r_symbol.detail += parameters + ")";
 
@@ -453,7 +453,7 @@ void ExtendGDScriptParser::parse_function_symbol(const GDScriptParser::FunctionN
 		if (return_type.kind == DataType::BUILTIN && return_type.builtin_type == Variant::NIL) {
 			r_symbol.detail += " -> void";
 		} else {
-			r_symbol.detail += " -> " + return_type.to_string();
+			r_symbol.detail += " -> " + return_type.to_string_with_alias();
 		}
 	}
 
@@ -555,7 +555,7 @@ void ExtendGDScriptParser::parse_function_symbol(const GDScriptParser::FunctionN
 			symbol.detail = local.type == SuiteNode::Local::CONSTANT ? "const " : "var ";
 			symbol.detail += symbol.name;
 			if (local.get_datatype().is_hard_type()) {
-				symbol.detail += ": " + local.get_datatype().to_string();
+				symbol.detail += ": " + local.get_datatype().to_string_with_alias();
 			}
 			switch (local.type) {
 				case SuiteNode::Local::CONSTANT:

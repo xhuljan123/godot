@@ -899,7 +899,8 @@ static String _make_arguments_hint(const GDScriptParser::FunctionNode *p_functio
 		if (p_function->return_type_constraint.is_hard_type() && p_function->return_type_constraint.builtin_type == Variant::NIL) {
 			arghint = "void " + p_function->identifier->name + "(";
 		} else {
-			arghint = p_function->return_type_constraint.to_string_strict() + " " + p_function->identifier->name + "(";
+			const GDScriptParser::DataType &return_type = p_function->return_type_constraint;
+			arghint = (return_type.is_hard_type() ? return_type.to_string_with_alias() : return_type.to_string_strict()) + " " + p_function->identifier->name + "(";
 		}
 	}
 
@@ -915,7 +916,7 @@ static String _make_arguments_hint(const GDScriptParser::FunctionNode *p_functio
 		if (!par->type_constraint.is_hard_type()) {
 			arghint += par->identifier->name.string() + ": Variant";
 		} else {
-			arghint += par->identifier->name.string() + ": " + par->type_constraint.to_string();
+			arghint += par->identifier->name.string() + ": " + par->type_constraint.to_string_with_alias();
 		}
 
 		if (par->initializer) {
@@ -979,7 +980,7 @@ static String _make_arguments_hint(const GDScriptParser::FunctionNode *p_functio
 			arghint += String::chr(0xFFFF);
 		}
 		const GDScriptParser::ParameterNode *rest_param = p_function->rest_parameter;
-		arghint += "..." + rest_param->identifier->name + ": " + rest_param->type_constraint.to_string();
+		arghint += "..." + rest_param->identifier->name + ": " + rest_param->type_constraint.to_string_with_alias();
 		if (p_arg_idx >= p_function->parameters.size()) {
 			arghint += String::chr(0xFFFF);
 		}
@@ -4683,7 +4684,7 @@ static Error _lookup_symbol_from_base(const GDScriptParser::DataType &p_base, co
 								break;
 						}
 
-						GDScriptDocGen::doctype_from_datatype(local.get_datatype(), r_result.doc_type, r_result.enumeration);
+						GDScriptDocGen::doctype_from_datatype_with_alias(local.get_datatype(), r_result.doc_type, r_result.enumeration);
 
 						r_result.script_path = base_type.script_path;
 						r_result.location = local.start_line;

@@ -187,6 +187,7 @@ public:
 
 		String to_string() const; // Uses the alias name if the type comes from a type alias.
 		String to_string_expanded() const; // Always shows the full type (e.g. the struct definition of an alias).
+		String to_string_with_alias() const; // Like `Foo (Struct[{ foo: int }])` for a type alias, for hover tooltips and argument hints.
 		_FORCE_INLINE_ String to_string_strict() const { return is_hard_type() ? to_string() : "Variant"; }
 
 		String to_property_info_hint_string() const;

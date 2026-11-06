@@ -433,7 +433,7 @@ void GDScriptDocGen::_generate_docs(GDScript *p_script, const GDP::ClassNode *p_
 				} else {
 					const_doc.value = _docvalue_from_variant(m_const->initializer->reduced_value);
 					const_doc.is_value_valid = true;
-					_doctype_from_datatype(m_const->type_constraint, const_doc.type, const_doc.enumeration);
+					_doctype_from_datatype_with_alias(m_const->type_constraint, const_doc.type, const_doc.enumeration);
 				}
 				const_doc.description = m_const->doc_data.description;
 				const_doc.is_deprecated = m_const->doc_data.is_deprecated;
@@ -463,7 +463,7 @@ void GDScriptDocGen::_generate_docs(GDScript *p_script, const GDP::ClassNode *p_
 					}
 					method_doc.qualifiers += "vararg";
 					method_doc.rest_argument.name = m_func->rest_parameter->identifier->name;
-					_doctype_from_datatype(m_func->rest_parameter->type_constraint, method_doc.rest_argument.type, method_doc.rest_argument.enumeration);
+					_doctype_from_datatype_with_alias(m_func->rest_parameter->type_constraint, method_doc.rest_argument.type, method_doc.rest_argument.enumeration);
 				}
 				if (m_func->is_abstract) {
 					if (!method_doc.qualifiers.is_empty()) {
@@ -481,7 +481,7 @@ void GDScriptDocGen::_generate_docs(GDScript *p_script, const GDP::ClassNode *p_
 				if (func_name == "_init" || func_name == "_static_init") {
 					method_doc.return_type = "void";
 				} else if (!m_func->return_type_constraint.is_variant()) {
-					_doctype_from_datatype(m_func->return_type_constraint, method_doc.return_type, method_doc.return_enum, true);
+					_doctype_from_datatype_with_alias(m_func->return_type_constraint, method_doc.return_type, method_doc.return_enum, true);
 				} else {
 					method_doc.return_type = "Variant";
 				}
@@ -489,7 +489,7 @@ void GDScriptDocGen::_generate_docs(GDScript *p_script, const GDP::ClassNode *p_
 				for (const GDP::ParameterNode *p : m_func->parameters) {
 					DocData::ArgumentDoc arg_doc;
 					arg_doc.name = p->identifier->name;
-					_doctype_from_datatype(p->type_constraint, arg_doc.type, arg_doc.enumeration);
+					_doctype_from_datatype_with_alias(p->type_constraint, arg_doc.type, arg_doc.enumeration);
 					if (p->initializer != nullptr) {
 						arg_doc.default_value = docvalue_from_expression(p->initializer);
 					}
@@ -516,7 +516,7 @@ void GDScriptDocGen::_generate_docs(GDScript *p_script, const GDP::ClassNode *p_
 				for (const GDP::ParameterNode *p : m_signal->parameters) {
 					DocData::ArgumentDoc arg_doc;
 					arg_doc.name = p->identifier->name;
-					_doctype_from_datatype(p->type_constraint, arg_doc.type, arg_doc.enumeration);
+					_doctype_from_datatype_with_alias(p->type_constraint, arg_doc.type, arg_doc.enumeration);
 					signal_doc.arguments.push_back(arg_doc);
 				}
 
@@ -536,7 +536,7 @@ void GDScriptDocGen::_generate_docs(GDScript *p_script, const GDP::ClassNode *p_
 				prop_doc.deprecated_message = m_var->doc_data.deprecated_message;
 				prop_doc.is_experimental = m_var->doc_data.is_experimental;
 				prop_doc.experimental_message = m_var->doc_data.experimental_message;
-				_doctype_from_datatype(m_var->type_constraint, prop_doc.type, prop_doc.enumeration);
+				_doctype_from_datatype_with_alias(m_var->type_constraint, prop_doc.type, prop_doc.enumeration);
 
 				switch (m_var->property) {
 					case GDP::VariableNode::PROP_NONE:
@@ -636,6 +636,29 @@ void GDScriptDocGen::generate_docs(GDScript *p_script, const GDP::ClassNode *p_c
 		}
 	}
 	_generate_docs(p_script, p_class);
+	singletons.clear();
+}
+
+// Like `_doctype_from_datatype()`, but a type from a type alias is shown with the aliased type, like
+// `Foo (Struct[{ foo: int, bar: String }])`, so hover tooltips show what the alias is. Used for the types of members,
+// arguments and locals (not for nested types, or where the type is used as a link to a class).
+void GDScriptDocGen::_doctype_from_datatype_with_alias(const DataType &p_datatype, String &r_type, String &r_enum, bool p_is_return) {
+	_doctype_from_datatype(p_datatype, r_type, r_enum, p_is_return);
+	if (p_datatype.alias_name == StringName() || p_datatype.is_meta_type || !p_datatype.is_hard_type() || !r_enum.is_empty()) {
+		return;
+	}
+	if (r_type != String(p_datatype.alias_name)) {
+		r_type = vformat("%s (%s)", p_datatype.alias_name, r_type);
+	}
+}
+
+void GDScriptDocGen::doctype_from_datatype_with_alias(const DataType &p_datatype, String &r_type, String &r_enum, bool p_is_return) {
+	for (const KeyValue<StringName, ProjectSettings::AutoloadInfo> &E : ProjectSettings::get_singleton()->get_autoload_list()) {
+		if (E.value.is_singleton) {
+			singletons[E.value.path] = E.key;
+		}
+	}
+	_doctype_from_datatype_with_alias(p_datatype, r_type, r_enum, p_is_return);
 	singletons.clear();
 }
 

@@ -515,6 +515,31 @@ static void _add_callable_type_to_rt(const String &p_type, RichTextLabel *p_rt, 
 static void _add_type_to_rt(const String &p_type, const String &p_enum, bool p_is_bitfield, RichTextLabel *p_rt, const Control *p_owner_node, const String &p_class) {
 	const Color type_color = p_owner_node->get_theme_color(SNAME("type_color"), SNAME("EditorHelp"));
 
+	if (p_enum.is_empty() && p_type.ends_with(")")) {
+		// GDScript type alias, shown with the aliased type: `Foo (Struct[{ foo: int, bar: String }])`.
+		// Regular type names never contain " (", so this can't match another type.
+		const int alias_end = p_type.find(" (");
+		bool is_alias = alias_end > 0;
+		if (is_alias) {
+			for (const String &part : p_type.left(alias_end).split(".")) {
+				if (!part.is_valid_ascii_identifier()) {
+					is_alias = false;
+					break;
+				}
+			}
+		}
+		if (is_alias) {
+			p_rt->push_color(type_color);
+			p_rt->add_text(p_type.left(alias_end) + " (");
+			p_rt->pop(); // color
+			_add_type_to_rt(p_type.substr(alias_end + 2, p_type.length() - alias_end - 3), String(), false, p_rt, p_owner_node, p_class);
+			p_rt->push_color(type_color);
+			p_rt->add_text(")");
+			p_rt->pop(); // color
+			return;
+		}
+	}
+
 	if (p_enum.is_empty() && p_type.begins_with("Callable[")) {
 		if (p_type.ends_with("][]")) {
 			// Typed array of typed callables (`Array[Callable[int]]`).
