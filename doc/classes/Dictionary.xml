@@ -166,6 +166,22 @@
 		};
 		[/csharp]
 		[/codeblocks]
+		In GDScript, a key of a struct type can have a default value: [code]key = value[/code] (the key is typed as the value) or [code]key: Type = value[/code]. A key with a default value is optional, and reading it when it's missing gives the default value instead of [code]null[/code]. The default value must be a constant expression. Keys can be separated by commas or line breaks:
+		[codeblock]
+		type Foo = Struct[{
+			bar = 1 # Optional, typed as int.
+			scale: float = 1 # Optional, typed as float (1.0).
+			test: String # Required.
+		}]
+
+		func _ready():
+			var foo: Foo = { test = "hello" }
+			print(foo.bar) # Prints 1.
+			print(foo.has("bar")) # Prints false: reading a missing key doesn't add it.
+			foo.bar += 1 # Starts from the default value.
+			print(foo.bar) # Prints 2.
+		[/codeblock]
+		Array and dictionary default values are copied each time a missing key is read, so modifying the value that was read doesn't change the default value (or the struct). [code]Partial[...][/code] keeps the default values, and [code]Required[...][/code] removes them, since every key is then required.
 		In GDScript, [code]ExtractFromClass[ClassType][/code] is a struct type (a statically typed dictionary) with a required key for each variable of a GDScript class that has an [code]@export[/code] annotation (any [code]@export_*[/code] annotation except [annotation @GDScript.@export_tool_button]), including inherited ones, with the same type as the variable. Other variables are left out:
 		[codeblock]
 		class Foo extends Resource:

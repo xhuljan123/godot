@@ -1,0 +1,15 @@
+GDTEST_OK
+1 1.0 hello
+true true
+false
+2 true
+1.0
+5
+default
+[] false
+["b"] []
+true
+1 true
+1 1
+1
+1.0

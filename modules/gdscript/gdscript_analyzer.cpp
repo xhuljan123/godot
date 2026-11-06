@@ -781,6 +781,9 @@ GDScriptParser::DataType GDScriptAnalyzer::resolve_datatype(GDScriptParser::Type
 
 	if (p_type->is_struct) {
 		// `Struct[{ key: Type, optional_key?: Type }]`. At runtime it's a plain `Dictionary`.
+		if (p_type->resolved_type.is_set() && p_type->resolved_type.is_struct_type()) {
+			return p_type->resolved_type; // Already resolved: don't check (and report errors for) default values again.
+		}
 		result.kind = GDScriptParser::DataType::BUILTIN;
 		result.builtin_type = Variant::DICTIONARY;
 		result.is_struct = true;
@@ -796,19 +799,30 @@ GDScriptParser::DataType GDScriptAnalyzer::resolve_datatype(GDScriptParser::Type
 				}
 				for (int i = 0; i < spread_type.struct_keys.size(); i++) {
 					const int existing = result.find_struct_key(spread_type.struct_keys[i]);
+					Variant default_value;
+					const bool has_default = spread_type.get_struct_key_default(i, default_value);
 					if (existing >= 0) {
 						result.struct_key_types.write[existing] = spread_type.struct_key_types[i];
 						result.struct_key_optional.write[existing] = spread_type.struct_key_optional[i];
+						result.set_struct_key_default(existing, has_default, default_value);
 					} else {
-						result.add_struct_key(spread_type.struct_keys[i], spread_type.struct_key_types[i], spread_type.struct_key_optional[i]);
+						result.add_struct_key(spread_type.struct_keys[i], spread_type.struct_key_types[i], spread_type.struct_key_optional[i], has_default, default_value);
 					}
 				}
 				continue;
 			}
-			GDScriptParser::DataType field_type = type_from_metatype(resolve_datatype(field.type));
-			if (field_type.kind == GDScriptParser::DataType::BUILTIN && field_type.builtin_type == Variant::NIL) {
-				push_error(vformat(R"(Struct key "%s" cannot be of type "void" or "null".)", field.name), field.type);
-				field_type = GDScriptParser::DataType::get_variant_type();
+			GDScriptParser::DataType field_type;
+			if (field.type != nullptr) {
+				field_type = type_from_metatype(resolve_datatype(field.type));
+				if (field_type.kind == GDScriptParser::DataType::BUILTIN && field_type.builtin_type == Variant::NIL) {
+					push_error(vformat(R"(Struct key "%s" cannot be of type "void" or "null".)", field.name), field.type);
+					field_type = GDScriptParser::DataType::get_variant_type();
+				}
+			}
+			Variant default_value;
+			const bool has_default = field.default_value != nullptr && resolve_struct_key_default(field, field_type, default_value);
+			if (!field_type.is_set()) {
+				field_type = GDScriptParser::DataType::get_variant_type(); // Invalid default value (already reported).
 			}
 			field_type.is_constant = false;
 			field_type.is_read_only = false;
@@ -818,8 +832,9 @@ GDScriptParser::DataType GDScriptAnalyzer::resolve_datatype(GDScriptParser::Type
 				// Overrides a key from a spread struct.
 				result.struct_key_types.write[existing] = field_type;
 				result.struct_key_optional.write[existing] = field.optional;
+				result.set_struct_key_default(existing, has_default, default_value);
 			} else {
-				result.add_struct_key(field.name, field_type, field.optional);
+				result.add_struct_key(field.name, field_type, field.optional, has_default, default_value);
 			}
 		}
 		p_type->resolved_type = result;
@@ -3556,17 +3571,24 @@ GDScriptParser::DataType GDScriptAnalyzer::reduce_merge_objects_call(GDScriptPar
 	for (int i = 0; i < defaults.struct_keys.size(); i++) {
 		GDScriptParser::DataType key_type = defaults.struct_key_types[i];
 		key_type.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
-		result.add_struct_key(defaults.struct_keys[i], key_type, defaults.struct_key_optional[i]);
+		Variant default_value;
+		const bool has_default = defaults.get_struct_key_default(i, default_value);
+		result.add_struct_key(defaults.struct_keys[i], key_type, defaults.struct_key_optional[i], has_default, default_value);
 	}
 	for (int i = 0; i < overrides.struct_keys.size(); i++) {
 		const StringName &key = overrides.struct_keys[i];
 		GDScriptParser::DataType key_type = overrides.struct_key_types[i];
 		key_type.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
 		const bool optional = overrides.struct_key_optional[i];
+		Variant override_default;
+		const bool override_has_default = overrides.get_struct_key_default(i, override_default);
 		const int existing = result.find_struct_key(key);
 		if (existing < 0) {
-			result.add_struct_key(key, key_type, optional);
+			result.add_struct_key(key, key_type, optional, override_has_default, override_default);
 			continue;
+		}
+		if (override_has_default && !result.has_struct_key_default(existing)) {
+			result.set_struct_key_default(existing, true, override_default); // Used if the key is missing in both.
 		}
 		if (!optional) {
 			result.struct_key_types.write[existing] = key_type;
@@ -3850,13 +3872,55 @@ bool GDScriptAnalyzer::is_struct_mismatch(const GDScriptParser::DataType &p_targ
 	return (p_target.is_struct_type() && p_source.is_struct_type()) || (p_target.is_typed_callable_type() && p_source.is_typed_callable_type()) || (p_target.is_key_of_type() && p_source.is_key_of_type());
 }
 
+// Default value of a struct key (`key = value` or `key: Type = value`). It must be a constant expression.
+// Without a type, the key is typed as the value (a dictionary literal with name keys is typed as a struct, like with `inferType()`).
+// With a type, the value must be compatible with it (a constant `int` for a `float` is converted).
+// Sets `r_type` if it was inferred. Returns `false` (after reporting an error) if the default value can't be used.
+bool GDScriptAnalyzer::resolve_struct_key_default(const GDScriptParser::TypeNode::StructField &p_field, GDScriptParser::DataType &r_type, Variant &r_default) {
+	GDScriptParser::ExpressionNode *expression = p_field.default_value;
+	reduce_expression(expression);
+
+	if (r_type.is_set()) {
+		update_literal_for_expected_type(expression, r_type);
+	} else if (expression->type == GDScriptParser::Node::DICTIONARY) {
+		reduce_object_argument(expression); // `key = { x = 0, y = 0 }`: a struct, if the keys are names.
+	}
+
+	if (!expression->is_constant) {
+		push_error(vformat(R"(The default value of struct key "%s" must be a constant expression.)", p_field.name), expression);
+		return false;
+	}
+
+	GDScriptParser::DataType value_type = expression->type_constraint;
+	if (!r_type.is_set()) {
+		if (!value_type.is_set() || value_type.is_variant() || (value_type.kind == GDScriptParser::DataType::BUILTIN && value_type.builtin_type == Variant::NIL)) {
+			push_error(vformat(R"(Cannot infer the type of struct key "%s" from its default value. Add a type: "%s: Type = ...".)", p_field.name, p_field.name), expression);
+			return false;
+		}
+		r_type = value_type;
+	} else if (!r_type.is_variant()) {
+		const bool is_null = expression->reduced_value.get_type() == Variant::NIL;
+		const bool type_is_object = r_type.kind == GDScriptParser::DataType::NATIVE || r_type.kind == GDScriptParser::DataType::SCRIPT || r_type.kind == GDScriptParser::DataType::CLASS;
+		if (is_null ? !type_is_object : !is_type_compatible(r_type, value_type, true, expression)) {
+			push_error(vformat(R"(Cannot use a value of type "%s" as the default value of struct key "%s" of type "%s".)", is_null ? String("null") : value_type.to_string(), p_field.name, r_type.to_string()), expression);
+			return false;
+		}
+		if (!is_null) {
+			update_const_expression_builtin_type(expression, r_type, "use"); // `2` becomes `2.0` for a `float`.
+		}
+	}
+
+	r_default = expression->reduced_value;
+	return true;
+}
+
 // Type of `value.key` when reading a struct key. Optional keys give `null` when missing, so unless the declared type
-// can hold `null` (objects, `Variant`), the result is a "weak" type: still known for completion and key checks,
-// but checked at runtime when assigned to a typed variable.
+// can hold `null` (objects, `Variant`) or the key has a default value, the result is a "weak" type: still known for
+// completion and key checks, but checked at runtime when assigned to a typed variable.
 GDScriptParser::DataType GDScriptAnalyzer::get_struct_key_read_type(const GDScriptParser::DataType &p_struct_type, int p_key_index) {
 	GDScriptParser::DataType result = p_struct_type.struct_key_types[p_key_index];
 	bool is_hard = p_struct_type.is_hard_type();
-	if (p_struct_type.struct_key_optional[p_key_index]) {
+	if (p_struct_type.struct_key_optional[p_key_index] && !p_struct_type.has_struct_key_default(p_key_index)) {
 		const bool is_nullable = result.kind == GDScriptParser::DataType::VARIANT || result.kind == GDScriptParser::DataType::NATIVE || result.kind == GDScriptParser::DataType::SCRIPT || result.kind == GDScriptParser::DataType::CLASS;
 		is_hard = is_hard && is_nullable;
 	}
@@ -6091,7 +6155,16 @@ void GDScriptAnalyzer::reduce_subscript(GDScriptParser::SubscriptNode *p_subscri
 			bool valid = false;
 			// TODO: Check if `p_subscript->base->reduced_value` is GDScript.
 			Variant value = p_subscript->base->reduced_value.get(p_subscript->index->reduced_value, &valid);
-			if (!valid) {
+			const GDScriptParser::DataType &constant_base_type = p_subscript->base->type_constraint;
+			const int constant_key_index = (!valid && constant_base_type.is_struct_type() && (p_subscript->index->reduced_value.get_type() == Variant::STRING || p_subscript->index->reduced_value.get_type() == Variant::STRING_NAME)) ? constant_base_type.find_struct_key(p_subscript->index->reduced_value.operator StringName()) : -1;
+			if (constant_key_index >= 0 && constant_base_type.struct_key_optional[constant_key_index]) {
+				// Missing optional key of a constant struct: its default value, or `null`.
+				Variant default_value;
+				constant_base_type.get_struct_key_default(constant_key_index, default_value);
+				p_subscript->is_constant = true;
+				p_subscript->reduced_value = default_value;
+				result_type = get_struct_key_read_type(constant_base_type, constant_key_index);
+			} else if (!valid) {
 				push_error(vformat(R"(Cannot get index "%s" from "%s".)", p_subscript->index->reduced_value, p_subscript->base->reduced_value), p_subscript->index);
 				result_type.kind = GDScriptParser::DataType::VARIANT;
 			} else {

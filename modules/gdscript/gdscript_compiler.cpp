@@ -266,6 +266,36 @@ static bool _can_use_validate_call(const MethodBind *p_method, const Vector<GDSc
 	return true;
 }
 
+// Reads an optional struct key: `base.get(key)`, or `base.get(key, default)` if the key has a default value,
+// so a missing key gives `null` or its default value instead of an error. Array and dictionary default values
+// are copied on each read, so changing the value that was read doesn't change the default value.
+void GDScriptCompiler::_write_struct_key_get(CodeGen &codegen, const GDScriptCodeGenerator::Address &p_target, const GDScriptCodeGenerator::Address &p_base, const GDScriptParser::DataType &p_struct_type, int p_key_index) {
+	GDScriptCodeGenerator *gen = codegen.generator;
+	Vector<GDScriptCodeGenerator::Address> get_args;
+	get_args.push_back(codegen.add_constant(p_struct_type.struct_keys[p_key_index]));
+
+	Variant default_value;
+	bool pop_default = false;
+	if (p_struct_type.get_struct_key_default(p_key_index, default_value)) {
+		const Variant::Type default_type = default_value.get_type();
+		if (default_type == Variant::ARRAY || default_type == Variant::DICTIONARY) {
+			GDScriptCodeGenerator::Address copy = codegen.add_temporary();
+			Vector<GDScriptCodeGenerator::Address> duplicate_args;
+			duplicate_args.push_back(codegen.add_constant(true)); // Deep copy.
+			gen->write_call(copy, codegen.add_constant(default_value), SNAME("duplicate"), duplicate_args);
+			get_args.push_back(copy);
+			pop_default = true;
+		} else {
+			get_args.push_back(codegen.add_constant(default_value));
+		}
+	}
+
+	gen->write_call(p_target, p_base, SNAME("get"), get_args);
+	if (pop_default) {
+		gen->pop_temporary();
+	}
+}
+
 GDScriptCodeGenerator::Address GDScriptCompiler::_parse_expression(CodeGen &codegen, Error &r_error, const GDScriptParser::ExpressionNode *p_expression, bool p_root, bool p_initializer) {
 	if (p_expression->is_constant && !(p_expression->type_constraint.is_meta_type && p_expression->type_constraint.kind == GDScriptParser::DataType::CLASS)) {
 		return codegen.add_constant(p_expression->reduced_value);
@@ -857,9 +887,7 @@ GDScriptCodeGenerator::Address GDScriptCompiler::_parse_expression(CodeGen &code
 			GDScriptCodeGenerator::Address raw_value = is_struct_access ? codegen.add_temporary() : result;
 
 			if (is_optional_struct_key) {
-				Vector<GDScriptCodeGenerator::Address> get_args;
-				get_args.push_back(codegen.add_constant(subscript->base->type_constraint.struct_keys[struct_key_index]));
-				gen->write_call(raw_value, base, SNAME("get"), get_args);
+				_write_struct_key_get(codegen, raw_value, base, subscript->base->type_constraint, struct_key_index);
 			} else if (named) {
 				gen->write_get_named(raw_value, name, base);
 			} else {
@@ -1178,7 +1206,11 @@ GDScriptCodeGenerator::Address GDScriptCompiler::_parse_expression(CodeGen &code
 					GDScriptCodeGenerator::Address op_result = codegen.add_temporary(_gdtype_from_datatype(assignment->type_constraint, codegen.script));
 					const bool from_struct = subscript->base->type_constraint.is_struct_type();
 					GDScriptCodeGenerator::Address value = codegen.add_temporary(from_struct ? GDScriptDataType() : _gdtype_from_datatype(subscript->type_constraint, codegen.script));
-					if (subscript->is_attribute) {
+					const int struct_key_index = from_struct ? GDScriptAnalyzer::get_struct_key_index(subscript) : -1;
+					if (struct_key_index >= 0 && subscript->base->type_constraint.has_struct_key_default(struct_key_index)) {
+						// `data.key += 1` with a missing key starts from the default value.
+						_write_struct_key_get(codegen, value, prev_base, subscript->base->type_constraint, struct_key_index);
+					} else if (subscript->is_attribute) {
 						gen->write_get_named(value, name, prev_base);
 					} else {
 						gen->write_get(value, key, prev_base);

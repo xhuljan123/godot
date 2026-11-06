@@ -3904,6 +3904,15 @@ GDScriptParser::ExpressionNode *GDScriptParser::parse_invalid_token(ExpressionNo
 	return p_previous_operand;
 }
 
+// In a struct type, keys can be separated by a line break instead of a comma:
+// the next key (or `...` spread) must start on a later line than the end of the previous key.
+bool GDScriptParser::is_struct_key_on_next_line() const {
+	if (current.start_line <= previous.end_line) {
+		return false;
+	}
+	return current.type == GDScriptTokenizer::Token::IDENTIFIER || current.type == GDScriptTokenizer::Token::PERIOD_PERIOD_PERIOD || (current.type == GDScriptTokenizer::Token::LITERAL && (current.literal.get_type() == Variant::STRING || current.literal.get_type() == Variant::STRING_NAME));
+}
+
 GDScriptParser::TypeNode *GDScriptParser::parse_type(bool p_allow_void) {
 	TypeNode *type = alloc_node<TypeNode>();
 	reset_extents(type, current);
@@ -4045,7 +4054,7 @@ GDScriptParser::TypeNode *GDScriptParser::parse_type(bool p_allow_void) {
 					}
 					spread.key_node = spread.type;
 					type->struct_fields.push_back(spread);
-					if (!match(GDScriptTokenizer::Token::COMMA)) {
+					if (!match(GDScriptTokenizer::Token::COMMA) && !is_struct_key_on_next_line()) {
 						break;
 					}
 					continue;
@@ -4079,13 +4088,32 @@ GDScriptParser::TypeNode *GDScriptParser::parse_type(bool p_allow_void) {
 				field.key_node = key_node;
 				field.optional = match(GDScriptTokenizer::Token::QUESTION_MARK);
 
-				if (!consume(GDScriptTokenizer::Token::COLON, vformat(R"(Expected ":" after struct key "%s".)", key_name))) {
-					break;
-				}
-				field.type = parse_type(false);
-				if (field.type == nullptr) {
-					push_error(vformat(R"(Expected type for struct key "%s".)", key_name));
-					break;
+				if (match(GDScriptTokenizer::Token::EQUAL)) {
+					// `key = value`: optional key with a default value, typed as the value.
+					field.optional = true;
+					field.default_value = parse_expression(false);
+					if (field.default_value == nullptr) {
+						push_error(vformat(R"(Expected default value after "=" for struct key "%s".)", key_name));
+						break;
+					}
+				} else {
+					if (!consume(GDScriptTokenizer::Token::COLON, vformat(R"(Expected ":" or "=" after struct key "%s".)", key_name))) {
+						break;
+					}
+					field.type = parse_type(false);
+					if (field.type == nullptr) {
+						push_error(vformat(R"(Expected type for struct key "%s".)", key_name));
+						break;
+					}
+					if (match(GDScriptTokenizer::Token::EQUAL)) {
+						// `key: Type = value`: optional key with a default value.
+						field.optional = true;
+						field.default_value = parse_expression(false);
+						if (field.default_value == nullptr) {
+							push_error(vformat(R"(Expected default value after "=" for struct key "%s".)", key_name));
+							break;
+						}
+					}
 				}
 
 				if (declared_keys.has(key_name)) {
@@ -4095,7 +4123,8 @@ GDScriptParser::TypeNode *GDScriptParser::parse_type(bool p_allow_void) {
 					type->struct_fields.push_back(field);
 				}
 
-				if (!match(GDScriptTokenizer::Token::COMMA)) {
+				// Keys are separated by commas, or by line breaks (like a multiline dictionary without trailing commas).
+				if (!match(GDScriptTokenizer::Token::COMMA) && !is_struct_key_on_next_line()) {
 					break;
 				}
 			}
@@ -5632,7 +5661,12 @@ String GDScriptParser::DataType::to_string_expanded() const {
 					if (!key.is_valid_ascii_identifier()) {
 						key = key.c_escape().quote();
 					}
-					fields += key + (struct_key_optional[i] ? "?: " : ": ") + struct_key_types[i].to_string();
+					Variant default_value;
+					if (get_struct_key_default(i, default_value)) {
+						fields += key + ": " + struct_key_types[i].to_string() + " = " + default_value.get_construct_string();
+					} else {
+						fields += key + (struct_key_optional[i] ? "?: " : ": ") + struct_key_types[i].to_string();
+					}
 				}
 				return vformat("Struct[{ %s }]", fields);
 			}

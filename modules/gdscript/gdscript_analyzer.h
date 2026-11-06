@@ -177,6 +177,7 @@ class GDScriptAnalyzer {
 	void set_callable_signature_from_method_info(GDScriptParser::DataType &r_type, const MethodInfo &p_info, const GDScriptParser::Node *p_source) const;
 
 public:
+	bool resolve_struct_key_default(const GDScriptParser::TypeNode::StructField &p_field, GDScriptParser::DataType &r_type, Variant &r_default);
 	static GDScriptParser::DataType get_struct_key_read_type(const GDScriptParser::DataType &p_struct_type, int p_key_index);
 	static int get_struct_key_index(const GDScriptParser::ExpressionNode *p_expression);
 

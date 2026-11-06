@@ -108,6 +108,10 @@ public:
 		Vector<StringName> struct_keys;
 		Vector<DataType> struct_key_types;
 		Vector<bool> struct_key_optional;
+		// Default values of keys (`Struct[{ key = 1 }]`), parallel to `struct_keys`. Only used for optional keys:
+		// reading a missing key gives its default value instead of `null`.
+		Vector<bool> struct_key_has_default;
+		Vector<Variant> struct_key_defaults;
 		// No keys other than the declared ones are accepted from another struct type (structural typing normally allows extra keys).
 		// Used for the `StructRef` constructor and `assign()`, where unknown keys are errors.
 		bool struct_is_exact = false;
@@ -273,11 +277,32 @@ public:
 			return -1;
 		}
 
-		void add_struct_key(const StringName &p_key, const DataType &p_type, bool p_optional) {
+		void add_struct_key(const StringName &p_key, const DataType &p_type, bool p_optional, bool p_has_default = false, const Variant &p_default = Variant()) {
 			is_struct = true;
 			struct_keys.push_back(p_key);
 			struct_key_types.push_back(p_type);
 			struct_key_optional.push_back(p_optional);
+			struct_key_has_default.push_back(p_has_default);
+			struct_key_defaults.push_back(p_has_default ? p_default : Variant());
+		}
+
+		void set_struct_key_default(int p_index, bool p_has_default, const Variant &p_default = Variant()) {
+			struct_key_has_default.write[p_index] = p_has_default;
+			struct_key_defaults.write[p_index] = p_has_default ? p_default : Variant();
+		}
+
+		// Default value of an optional key, if it has one (a required key never uses its default value).
+		bool get_struct_key_default(int p_index, Variant &r_default) const {
+			if (p_index < 0 || p_index >= struct_key_has_default.size() || !struct_key_optional[p_index] || !struct_key_has_default[p_index]) {
+				return false;
+			}
+			r_default = struct_key_defaults[p_index];
+			return true;
+		}
+
+		_FORCE_INLINE_ bool has_struct_key_default(int p_index) const {
+			Variant unused;
+			return get_struct_key_default(p_index, unused);
 		}
 
 		void clear_struct() {
@@ -285,6 +310,8 @@ public:
 			struct_keys.clear();
 			struct_key_types.clear();
 			struct_key_optional.clear();
+			struct_key_has_default.clear();
+			struct_key_defaults.clear();
 			struct_is_exact = false;
 		}
 
@@ -348,6 +375,8 @@ public:
 			struct_keys = p_other.struct_keys;
 			struct_key_types = p_other.struct_key_types;
 			struct_key_optional = p_other.struct_key_optional;
+			struct_key_has_default = p_other.struct_key_has_default;
+			struct_key_defaults = p_other.struct_key_defaults;
 			struct_is_exact = p_other.struct_is_exact;
 			is_key_of = p_other.is_key_of;
 			key_of_values = p_other.key_of_values;
@@ -1348,11 +1377,12 @@ public:
 		LocalVector<IdentifierNode *> type_chain;
 		LocalVector<TypeNode *> container_types;
 
-		// `Struct[{ key: Type, optional_key?: Type }]`.
+		// `Struct[{ key: Type, optional_key?: Type, key_with_default = 1, typed_key_with_default: Type = 1 }]`.
 		struct StructField {
 			StringName name;
 			Node *key_node = nullptr; // IdentifierNode or LiteralNode, for error reporting.
-			TypeNode *type = nullptr;
+			TypeNode *type = nullptr; // Null if the type is inferred from the default value (`key = 1`).
+			ExpressionNode *default_value = nullptr; // `key = 1` or `key: Type = 1`. Makes the key optional.
 			bool optional = false;
 			bool is_spread = false; // `...OtherStruct`: copies the keys of another struct type (`type` is that struct type).
 		};
@@ -1806,6 +1836,7 @@ private:
 	ExpressionNode *parse_yield(ExpressionNode *p_previous_operand, bool p_can_assign);
 	ExpressionNode *parse_invalid_token(ExpressionNode *p_previous_operand, bool p_can_assign);
 	TypeNode *parse_type(bool p_allow_void = false);
+	bool is_struct_key_on_next_line() const;
 	// TODO: Remove in 5.x.
 	bool parse_standalone_string();
 
