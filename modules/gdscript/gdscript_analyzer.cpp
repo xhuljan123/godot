@@ -3585,7 +3585,7 @@ GDScriptParser::DataType GDScriptAnalyzer::reduce_merge_objects_call(GDScriptPar
 			if (p_call->arguments[i]->type == GDScriptParser::Node::DICTIONARY) {
 				hint = " A dictionary literal is a struct only if all its keys are names or constant strings.";
 			} else if (type.kind == GDScriptParser::DataType::BUILTIN && type.builtin_type == Variant::DICTIONARY) {
-				hint = R"( Use a struct type (like "Struct[{ key: Type }]") or "inferType()".)";
+				hint = R"*( Use a struct type (like "Struct[{ key: Type }]") or "inferType()".)*";
 			}
 			push_error(vformat(R"*(Invalid argument for "mergeObjects()" function: argument %d should be a struct but is "%s".%s)*", i + 1, type.is_hard_type() ? type.to_string() : String("Variant"), hint), p_call->arguments[i]);
 			valid_arguments = false;
