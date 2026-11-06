@@ -1,0 +1,2 @@
+GDTEST_PARSER_ERROR
+"Omit" expects the keys to omit as a second argument, like "Omit[StructType, { key }]".

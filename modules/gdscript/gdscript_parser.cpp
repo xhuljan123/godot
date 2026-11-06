@@ -3955,6 +3955,8 @@ GDScriptParser::TypeNode *GDScriptParser::parse_type(bool p_allow_void) {
 		struct_modifier = TypeNode::STRUCT_MODIFIER_EXTRACT_FROM_CLASS;
 	} else if (type_element->name == SNAME("StructToVariant")) {
 		struct_modifier = TypeNode::STRUCT_MODIFIER_STRUCT_TO_VARIANT;
+	} else if (type_element->name == SNAME("Omit")) {
+		struct_modifier = TypeNode::STRUCT_MODIFIER_OMIT;
 	} else if (type_element->name == SNAME("KeyOf")) {
 		struct_modifier = TypeNode::STRUCT_MODIFIER_KEY_OF;
 	}
@@ -3972,7 +3974,7 @@ GDScriptParser::TypeNode *GDScriptParser::parse_type(bool p_allow_void) {
 			// `Partial[StructType, { key, other }]`: keys to exclude (they keep their own optionality).
 			if (struct_modifier == TypeNode::STRUCT_MODIFIER_FROM_CLASS || struct_modifier == TypeNode::STRUCT_MODIFIER_EXTRACT_FROM_CLASS || struct_modifier == TypeNode::STRUCT_MODIFIER_STRUCT_TO_VARIANT || struct_modifier == TypeNode::STRUCT_MODIFIER_KEY_OF) {
 				push_error(vformat(R"("%s" takes a single type argument.)", type_element->name));
-			} else if (consume(GDScriptTokenizer::Token::BRACE_OPEN, vformat(R"(Expected "{" with the keys to exclude after "%s[Type,".)", type_element->name))) {
+			} else if (consume(GDScriptTokenizer::Token::BRACE_OPEN, vformat(R"(Expected "{" with the keys to %s after "%s[Type,".)", struct_modifier == TypeNode::STRUCT_MODIFIER_OMIT ? "omit" : "exclude", type_element->name))) {
 				HashSet<StringName> excluded;
 				while (!check(GDScriptTokenizer::Token::BRACE_CLOSE) && !is_at_end()) {
 					TypeNode::StructModifierKey key;
@@ -4008,6 +4010,8 @@ GDScriptParser::TypeNode *GDScriptParser::parse_type(bool p_allow_void) {
 				}
 				consume(GDScriptTokenizer::Token::BRACE_CLOSE, R"(Expected closing "}" after the keys to exclude.)");
 			}
+		} else if (argument != nullptr && struct_modifier == TypeNode::STRUCT_MODIFIER_OMIT) {
+			push_error(R"("Omit" expects the keys to omit as a second argument, like "Omit[StructType, { key }]".)");
 		}
 		pop_multiline();
 		consume(GDScriptTokenizer::Token::BRACKET_CLOSE, vformat(R"(Expected closing "]" after "%s" type argument.)", type_element->name));

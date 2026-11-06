@@ -1,0 +1,6 @@
+GDTEST_ANALYZER_ERROR
+>> ERROR at line 5: Key "password" does not exist in struct type "NoPassword".
+>> ERROR at line 6: Missing required key "name" for struct type "NoPassword".
+>> ERROR at line 7: Key "email" does not exist in struct type "User".
+>> ERROR at line 8: "Omit" expects a struct type, but got "int".
+>> ERROR at line 9: Key "password" does not exist in struct type "NoPassword".

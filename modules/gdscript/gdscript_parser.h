@@ -1400,10 +1400,12 @@ public:
 			STRUCT_MODIFIER_FROM_CLASS, // `StructFromClass[ClassType]`: keys from the class member variables.
 			STRUCT_MODIFIER_EXTRACT_FROM_CLASS, // `ExtractFromClass[ClassType]`: required keys from the `@export` variables of the class.
 			STRUCT_MODIFIER_STRUCT_TO_VARIANT, // `StructToVariant[StructType]`: same keys (and optionality), all with `Variant` values.
+			STRUCT_MODIFIER_OMIT, // `Omit[StructType, { key, other }]`: the struct type without the listed keys.
 			STRUCT_MODIFIER_KEY_OF, // `KeyOf[StructType]`: a `String` that can only be one of the struct keys (not a struct type itself).
 		};
 		StructModifier struct_modifier = STRUCT_MODIFIER_NONE;
-		// Keys left as they are by `Partial[StructType, { key, other }]` and `Required[StructType, { key, other }]`.
+		// Keys left as they are by `Partial[StructType, { key, other }]` and `Required[StructType, { key, other }]`,
+		// or removed by `Omit[StructType, { key, other }]`.
 		struct StructModifierKey {
 			StringName name;
 			Node *key_node = nullptr; // IdentifierNode or LiteralNode, for error reporting.

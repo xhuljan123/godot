@@ -890,6 +890,35 @@ GDScriptParser::DataType GDScriptAnalyzer::resolve_datatype(GDScriptParser::Type
 			for (int i = 0; i < result.struct_key_types.size(); i++) {
 				result.struct_key_types.write[i] = variant_type;
 			}
+		} else if (p_type->struct_modifier == GDScriptParser::TypeNode::STRUCT_MODIFIER_OMIT) {
+			// `Omit[StructType, { key, other }]`: the struct type without the listed keys (like `Omit<T, K>` in TypeScript).
+			// The other keys keep their type, optionality and default value.
+			if (!argument_type.is_struct_type()) {
+				push_error(vformat(R"("Omit" expects a struct type, but got "%s".)", argument_type.to_string()), argument);
+				return bad_type;
+			}
+			HashSet<StringName> omitted;
+			for (const GDScriptParser::TypeNode::StructModifierKey &omitted_key : p_type->struct_modifier_excluded_keys) {
+				if (argument_type.find_struct_key(omitted_key.name) < 0) {
+					push_error(vformat(R"(Key "%s" does not exist in struct type "%s".)", omitted_key.name, argument_type.to_string()), omitted_key.key_node);
+					continue;
+				}
+				omitted.insert(omitted_key.name);
+			}
+			result = argument_type;
+			result.alias_name = StringName();
+			result.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
+			result.is_constant = false;
+			result.is_read_only = false;
+			result.clear_struct();
+			result.is_struct = true; // Even if every key is omitted (`Struct[{}]`).
+			result.struct_is_exact = argument_type.struct_is_exact;
+			for (int i = 0; i < argument_type.struct_keys.size(); i++) {
+				if (omitted.has(argument_type.struct_keys[i])) {
+					continue;
+				}
+				result.add_struct_key(argument_type.struct_keys[i], argument_type.struct_key_types[i], argument_type.struct_key_optional[i], argument_type.struct_key_has_default[i], argument_type.struct_key_defaults[i]);
+			}
 		} else if (p_type->struct_modifier == GDScriptParser::TypeNode::STRUCT_MODIFIER_PARTIAL || p_type->struct_modifier == GDScriptParser::TypeNode::STRUCT_MODIFIER_REQUIRED) {
 			// `Partial[StructType]`: same keys, all optional (like `Partial<T>` in TypeScript).
 			// `Required[StructType]`: same keys, all required (like `Required<T>` in TypeScript).

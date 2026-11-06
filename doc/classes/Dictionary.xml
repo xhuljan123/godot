@@ -197,6 +197,14 @@
 			save_foo({ foo = 2, bar = [1, 2] })
 			var patch: Partial[ExtractFromClass[Foo]] = { foo = 3 } # All keys optional.
 		[/codeblock]
+		[code]Omit[StructType, { key, other }][/code] is a struct type with the keys of [code]StructType[/code] except the listed ones. The other keys keep their type, whether they're optional, and their default value. Listing a key that doesn't exist in [code]StructType[/code] is an error:
+		[codeblock]
+		type User = Struct[{ id: int, name: String, password: String }]
+
+		# Same as `Struct[{ name: String }]`.
+		func show_user(user: Omit[User, { id, password }]) -&gt; void:
+			print(user.name)
+		[/codeblock]
 		[code]StructToVariant[StructType][/code] is a struct type with the same keys as [code]StructType[/code] (each one still required or optional), but with [Variant] as the type of every value. Use it to accept the same keys with values of any type, such as raw or unvalidated data:
 		[codeblock]
 		type Foo = Struct[{ foo: int, bar: Array[String] }]
