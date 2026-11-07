@@ -3656,9 +3656,10 @@ GDScriptParser::DataType GDScriptAnalyzer::reduce_merge_objects_call(GDScriptPar
 	return result;
 }
 
-// `load_file(path)`: loads the resource at runtime, like `load()`. If `path` is a constant string, the file must exist
+// `load_file(path)`: loads the resource at runtime, exactly like `load()`. If `path` is a constant string, the file must exist
 // (reported in the editor before running, like with `preload()`), and the call is typed like `preload()` would be:
-// with the class of the resource (`PackedScene`, `Texture2D`, ...), or as the script class itself for scripts.
+// with the class of the resource (`PackedScene`, `Texture2D`, ...), its script class, or as the script class itself for scripts.
+// Nothing is loaded during analysis: the type is read from the file.
 // Relative paths are prefixed with "res://", like with `load()`. A non-constant path is only checked at runtime.
 GDScriptParser::DataType GDScriptAnalyzer::reduce_load_file_call(GDScriptParser::CallNode *p_call, const GDScriptParser::DataType &p_default_type) {
 	if (p_call->arguments.size() != 1 || p_call->arguments[0] == nullptr) {
@@ -3689,33 +3690,45 @@ GDScriptParser::DataType GDScriptAnalyzer::reduce_load_file_call(GDScriptParser:
 		return p_default_type;
 	}
 
-	// Same as `preload()`: load the resource to know its type. GDScript files are loaded separately
-	// to permit cyclic references, as `ResourceLoader::load()` detects and rejects those.
-	Ref<Resource> resource;
+	// The resource is only loaded at runtime (like `load()`): loading it here would also load its dependencies
+	// (like the scripts used by a scene), which can be the script being analyzed or not loadable yet.
+	// Its type is read from the file instead, giving the same type `preload()` would.
 	const String res_type = ResourceLoader::get_resource_type(path);
 	if (res_type == "GDScript") {
+		// Typed as the script class, like `preload()`. The script is only parsed (shallow), not loaded.
 		Error err = OK;
 		Ref<GDScript> script = get_depended_shallow_script(path, err);
-		if (err == OK) {
-			resource = script;
+		if (err != OK || script.is_null()) {
+			return p_default_type; // Errors in that script are reported there (and at runtime).
 		}
-	} else {
-		Error err = OK;
-		resource = ResourceLoader::load(path, res_type, ResourceFormatLoader::CACHE_MODE_REUSE, &err);
-		if (err == ERR_BUSY) {
-			resource = ResourceLoader::ensure_resource_ref_override_for_outer_load(path, res_type);
-		}
-	}
-	if (resource.is_null()) {
-		push_error(vformat(R"(Could not load resource file "%s".)", path), path_node);
-		return p_default_type;
+		GDScriptParser::DataType result = type_from_variant(script, p_call);
+		ensure_cached_external_parser_for_class(result.class_type, nullptr, "Trying to resolve load_file", p_call);
+		result.is_constant = false; // Loaded at runtime.
+		result.is_read_only = false;
+		return result;
 	}
 
-	GDScriptParser::DataType result = type_from_variant(resource, p_call);
-	ensure_cached_external_parser_for_class(result.class_type, nullptr, "Trying to resolve load_file", p_call);
-	result.is_constant = false; // Loaded at runtime.
-	result.is_read_only = false;
-	return result;
+	// A resource with a custom script class (`class_name MyResource extends Resource`) is typed as that class.
+	const String script_class = ResourceLoader::get_resource_script_class(path);
+	if (!script_class.is_empty() && ScriptServer::is_global_class(script_class)) {
+		GDScriptParser::DataType result = type_from_metatype(make_global_class_meta_type(script_class, p_call));
+		if (result.is_set() && result.kind != GDScriptParser::DataType::VARIANT) {
+			result.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
+			result.is_constant = false;
+			result.is_read_only = false;
+			return result;
+		}
+	}
+
+	if (!res_type.is_empty() && ClassDB::class_exists(res_type) && ClassDB::is_parent_class(res_type, Resource::get_class_static())) {
+		GDScriptParser::DataType result;
+		result.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
+		result.kind = GDScriptParser::DataType::NATIVE;
+		result.builtin_type = Variant::OBJECT;
+		result.native_type = res_type;
+		return result;
+	}
+	return p_default_type;
 }
 
 // A `load_file()` call (the global function, not a method with the same name).

@@ -1,5 +1,6 @@
 GDTEST_OK
 2
+true
 script constant
 hello from the loaded script
 true

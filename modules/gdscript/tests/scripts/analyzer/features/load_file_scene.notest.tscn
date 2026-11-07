@@ -1,0 +1,6 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://analyzer/features/load_file_script.notest.gd" id="1"]
+
+[node name="Root" type="Node"]
+metadata/loaded_script = ExtResource("1")

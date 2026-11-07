@@ -5,6 +5,10 @@ func test():
 	var gradient := load_file("res://analyzer/features/load_file_resource.notest.tres") # Typed as `Gradient`.
 	print(gradient.get_point_count())
 
+	# Scenes are typed as `PackedScene`. They (and their dependencies) are only loaded at runtime.
+	var scene := load_file("res://analyzer/features/load_file_scene.notest.tscn")
+	print(scene.can_instantiate())
+
 	# Scripts are typed as the script class.
 	print(load_file("res://analyzer/features/load_file_script.notest.gd").VALUE)
 	print(load_file("res://analyzer/features/load_file_script.notest.gd").new().greet())
