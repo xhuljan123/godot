@@ -86,6 +86,7 @@ class GDScriptAnalyzer {
 	GDScriptParser::DataType reduce_object_argument(GDScriptParser::ExpressionNode *p_argument);
 	GDScriptParser::DataType reduce_merge_objects_call(GDScriptParser::CallNode *p_call);
 	GDScriptParser::DataType reduce_parse_optional_call(GDScriptParser::CallNode *p_call);
+	GDScriptParser::DataType reduce_load_file_call(GDScriptParser::CallNode *p_call, const GDScriptParser::DataType &p_default_type);
 
 	void resolve_annotation(GDScriptParser::AnnotationNode *p_annotation);
 	void resolve_class_member(GDScriptParser::ClassNode *p_class, const StringName &p_name, const GDScriptParser::Node *p_source = nullptr);
@@ -214,6 +215,7 @@ public:
 
 	static bool check_type_compatibility(const GDScriptParser::DataType &p_target, const GDScriptParser::DataType &p_source, bool p_allow_implicit_conversion = false, const GDScriptParser::Node *p_source_node = nullptr);
 	static bool is_typed_callable_return_call(const GDScriptParser::CallNode *p_call);
+	static bool is_load_file_call(const GDScriptParser::CallNode *p_call);
 	static GDScriptParser::DataType type_from_metatype(const GDScriptParser::DataType &p_meta_type);
 	static bool class_exists(const StringName &p_class);
 

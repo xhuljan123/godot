@@ -189,6 +189,23 @@
 				[b]Note:[/b] If [member ProjectSettings.editor/export/convert_text_resources_to_binary] is [code]true[/code], [method @GDScript.load] will not be able to read converted files in an exported project. If you rely on run-time loading of files present within the PCK, set [member ProjectSettings.editor/export/convert_text_resources_to_binary] to [code]false[/code].
 			</description>
 		</method>
+		<method name="load_file">
+			<return type="Resource" />
+			<param index="0" name="path" type="String" />
+			<description>
+				Loads and returns the [Resource] located at [param path], like [method load]. The resource is loaded when the function is called, not when the script is compiled.
+				If [param path] is a constant string, the file must exist: a missing file is reported as an error in the editor before running the project, like with [method preload]. The result is then typed like [method preload]'s, with the class of the resource (or as the script class itself for a script), so its members can be used with static typing and autocompletion:
+				[codeblock]
+				var scene := load_file("res://main.tscn") # Typed as PackedScene.
+				var enemy_script := load_file("res://enemy.gd") # Typed as the script class.
+				var enemy := enemy_script.new()
+
+				var missing := load_file("res://missing.tscn") # Error: File "res://missing.tscn" does not exist.
+				[/codeblock]
+				If [param path] isn't constant, it's only checked when called, and the result is typed as [Resource].
+				[b]Note:[/b] Like with [method load], relative paths are [i]not[/i] relative to the script calling this method, instead they are prefixed with [code]"res://"[/code].
+			</description>
+		</method>
 		<method name="mergeObjects">
 			<return type="Dictionary" />
 			<param index="0" name="defaults" type="Dictionary" />

@@ -662,7 +662,8 @@ GDScriptCodeGenerator::Address GDScriptCompiler::_parse_expression(CodeGen &code
 			// `call()` on a typed callable with a return type (`Callable[int][bool]`) is typed as the return type, but the callable
 			// may return anything at runtime (e.g. an untyped `Callable` assigned to it). Call into an untyped temporary,
 			// then assign it to the typed result, which checks (and converts) the value.
-			const bool checks_callable_return = !p_root && !is_awaited && result.type.has_type() && GDScriptAnalyzer::is_typed_callable_return_call(call);
+			// Same for `load_file()`, typed like `preload()` with the resource found when the script was analyzed.
+			const bool checks_callable_return = !p_root && !is_awaited && result.type.has_type() && (GDScriptAnalyzer::is_typed_callable_return_call(call) || GDScriptAnalyzer::is_load_file_call(call));
 			GDScriptCodeGenerator::Address call_target = checks_callable_return ? codegen.add_temporary() : result;
 
 			Vector<GDScriptCodeGenerator::Address> arguments;

@@ -237,6 +237,14 @@ struct GDScriptUtilityFunctionsDefinitions {
 		*r_ret = ResourceLoader::load(*p_args[0]);
 	}
 
+	// Same as `load()` at runtime. With a constant path, the analyzer checks that the file exists and types the result
+	// like `preload()` (see `GDScriptAnalyzer::reduce_load_file_call()`).
+	static inline void load_file(Variant *r_ret, const Variant **p_args, int p_arg_count, Callable::CallError &r_error) {
+		DEBUG_VALIDATE_ARG_COUNT(1, 1);
+		DEBUG_VALIDATE_ARG_TYPE(0, Variant::STRING);
+		*r_ret = ResourceLoader::load(*p_args[0]);
+	}
+
 #ifndef DISABLE_DEPRECATED
 
 	static inline void inst_to_dict(Variant *r_ret, const Variant **p_args, int p_arg_count, Callable::CallError &r_error) {
@@ -609,6 +617,7 @@ void GDScriptUtilityFunctions::register_functions() {
 	REGISTER_FUNC( ord,            true,  RET(INT),           ARGS( ARG("char", STRING)             ), false, varray(     ));
 	REGISTER_FUNC( range,          false, RET(ARRAY),         NOARGS,                                  true,  varray(     ));
 	REGISTER_FUNC( load,           false, RETCLS("Resource"), ARGS( ARG("path", STRING)             ), false, varray(     ));
+	REGISTER_FUNC( load_file,      false, RETCLS("Resource"), ARGS( ARG("path", STRING)             ), false, varray(     ));
 #ifndef DISABLE_DEPRECATED
 	REGISTER_FUNC( inst_to_dict,   false, RET(DICTIONARY),    ARGS( ARG("instance", OBJECT)         ), false, varray(     ));
 	REGISTER_FUNC( dict_to_inst,   false, RET(OBJECT),        ARGS( ARG("dictionary", DICTIONARY)   ), false, varray(     ));

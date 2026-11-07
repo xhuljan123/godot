@@ -2267,6 +2267,14 @@ static bool _guess_expression_type(GDScriptParser::CompletionContext &p_context,
 					break;
 				}
 
+				// `load_file("res://...")` is typed by the analyzer like `preload()`, with the class of the resource.
+				if (GDScriptAnalyzer::is_load_file_call(call) && call->type_constraint.is_hard_type()) {
+					r_type = GDScriptCompletionIdentifier();
+					r_type.type = call->type_constraint;
+					found = true;
+					break;
+				}
+
 				// Apply additional behavior aware inference that the analyzer can't do.
 				if (base.type.is_set()) {
 					// `call()` on a typed callable with a return type (`Callable[int][bool]`) returns that type.

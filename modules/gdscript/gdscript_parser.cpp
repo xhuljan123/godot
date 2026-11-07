@@ -3580,7 +3580,7 @@ GDScriptParser::ExpressionNode *GDScriptParser::parse_call(ExpressionNode *p_pre
 
 	// Arguments.
 	CompletionType ct = COMPLETION_CALL_ARGUMENTS;
-	if (call->function_name == SNAME("load")) {
+	if (call->function_name == SNAME("load") || call->function_name == SNAME("load_file")) {
 		ct = COMPLETION_RESOURCE_PATH;
 	}
 	push_completion_call(call);

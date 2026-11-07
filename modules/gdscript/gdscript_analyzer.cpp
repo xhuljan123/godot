@@ -3656,6 +3656,73 @@ GDScriptParser::DataType GDScriptAnalyzer::reduce_merge_objects_call(GDScriptPar
 	return result;
 }
 
+// `load_file(path)`: loads the resource at runtime, like `load()`. If `path` is a constant string, the file must exist
+// (reported in the editor before running, like with `preload()`), and the call is typed like `preload()` would be:
+// with the class of the resource (`PackedScene`, `Texture2D`, ...), or as the script class itself for scripts.
+// Relative paths are prefixed with "res://", like with `load()`. A non-constant path is only checked at runtime.
+GDScriptParser::DataType GDScriptAnalyzer::reduce_load_file_call(GDScriptParser::CallNode *p_call, const GDScriptParser::DataType &p_default_type) {
+	if (p_call->arguments.size() != 1 || p_call->arguments[0] == nullptr) {
+		return p_default_type; // Argument count already reported.
+	}
+	GDScriptParser::ExpressionNode *path_node = p_call->arguments[0];
+	if (!path_node->is_constant || (path_node->reduced_value.get_type() != Variant::STRING && path_node->reduced_value.get_type() != Variant::STRING_NAME)) {
+		return p_default_type;
+	}
+
+	String path = path_node->reduced_value;
+	if (path.is_empty()) {
+		push_error(R"*(Invalid argument for "load_file()" function: the path is empty.)*", path_node);
+		return p_default_type;
+	}
+	if (path.is_relative_path()) {
+		path = "res://" + path; // Same as `load()`.
+	}
+	path = path.simplify_path();
+
+	if (!ResourceLoader::exists(path)) {
+		Ref<FileAccess> file_check = FileAccess::create(FileAccess::ACCESS_RESOURCES);
+		if (file_check->file_exists(path)) {
+			push_error(vformat(R"(File "%s" has no resource loaders (unrecognized file extension).)", path), path_node);
+		} else {
+			push_error(vformat(R"(File "%s" does not exist.)", path), path_node);
+		}
+		return p_default_type;
+	}
+
+	// Same as `preload()`: load the resource to know its type. GDScript files are loaded separately
+	// to permit cyclic references, as `ResourceLoader::load()` detects and rejects those.
+	Ref<Resource> resource;
+	const String res_type = ResourceLoader::get_resource_type(path);
+	if (res_type == "GDScript") {
+		Error err = OK;
+		Ref<GDScript> script = get_depended_shallow_script(path, err);
+		if (err == OK) {
+			resource = script;
+		}
+	} else {
+		Error err = OK;
+		resource = ResourceLoader::load(path, res_type, ResourceFormatLoader::CACHE_MODE_REUSE, &err);
+		if (err == ERR_BUSY) {
+			resource = ResourceLoader::ensure_resource_ref_override_for_outer_load(path, res_type);
+		}
+	}
+	if (resource.is_null()) {
+		push_error(vformat(R"(Could not load resource file "%s".)", path), path_node);
+		return p_default_type;
+	}
+
+	GDScriptParser::DataType result = type_from_variant(resource, p_call);
+	ensure_cached_external_parser_for_class(result.class_type, nullptr, "Trying to resolve load_file", p_call);
+	result.is_constant = false; // Loaded at runtime.
+	result.is_read_only = false;
+	return result;
+}
+
+// A `load_file()` call (the global function, not a method with the same name).
+bool GDScriptAnalyzer::is_load_file_call(const GDScriptParser::CallNode *p_call) {
+	return p_call != nullptr && !p_call->is_super && p_call->callee != nullptr && p_call->callee->type == GDScriptParser::Node::IDENTIFIER && p_call->function_name == SNAME("load_file") && GDScriptUtilityFunctions::function_exists(p_call->function_name);
+}
+
 // `parseOptional(value, default_value)`: `value if value != null else default_value`.
 // The type of `value` decides the type of the call, and `default_value` must have that same type:
 // - It must be assignable to it without a conversion (a subtype is fine, `int` for a `float` isn't),
@@ -4704,6 +4771,12 @@ void GDScriptAnalyzer::reduce_call(GDScriptParser::CallNode *p_call, bool p_is_a
 		} else if (function_name == SNAME("mergeObjects") && GDScriptUtilityFunctions::function_exists(function_name)) {
 			// `mergeObjects(defaults, overrides)`: merging two structs gives a struct with the keys of both.
 			p_call->type_constraint = reduce_merge_objects_call(p_call);
+			return;
+		} else if (function_name == SNAME("load_file") && GDScriptUtilityFunctions::function_exists(function_name)) {
+			// `load_file(path)`: like `load()`, but a constant path must exist, and the result is typed like `preload()`.
+			MethodInfo function_info = GDScriptUtilityFunctions::get_function_info(function_name);
+			validate_call_arg(function_info, p_call);
+			p_call->type_constraint = reduce_load_file_call(p_call, type_from_property(function_info.return_val, false, p_call));
 			return;
 		} else if (function_name == SNAME("parseOptional") && GDScriptUtilityFunctions::function_exists(function_name)) {
 			// `parseOptional(value, default_value)`: typed as `value`, and `default_value` must have the same type.
