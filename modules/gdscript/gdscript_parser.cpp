@@ -4037,6 +4037,17 @@ GDScriptParser::TypeNode *GDScriptParser::parse_type(bool p_allow_void) {
 		}
 		pop_multiline();
 		consume(GDScriptTokenizer::Token::BRACKET_CLOSE, R"(Expected closing "]" after "Callable" argument types.)");
+		if (check(GDScriptTokenizer::Token::BRACKET_OPEN)) {
+			// Return type (like `Callable[int, String][bool]`). Can be `void`.
+			push_multiline(true); // Before consuming "[", like for the argument types.
+			advance(); // "[".
+			type->callable_return_type = parse_type(true);
+			if (type->callable_return_type == nullptr) {
+				push_error(R"(Expected return type after "Callable[...][".)");
+			}
+			pop_multiline();
+			consume(GDScriptTokenizer::Token::BRACKET_CLOSE, R"(Expected closing "]" after "Callable" return type.)");
+		}
 		complete_extents(type);
 		return type;
 	}
@@ -5662,6 +5673,12 @@ String GDScriptParser::DataType::to_string_expanded() const {
 				}
 				if (callable_is_vararg) {
 					arguments += callable_arg_types.is_empty() ? "..." : ", ...";
+				}
+				if (has_callable_return_type() && callable_return_type[0].is_hard_type()) {
+					// `Callable[int, String][bool]`. Not shown if unknown (a lambda without a return type).
+					const DataType &return_type = callable_return_type[0];
+					const bool is_void = return_type.kind == BUILTIN && return_type.builtin_type == Variant::NIL;
+					return vformat("Callable[%s][%s]", arguments, is_void ? String("void") : return_type.to_string());
 				}
 				return vformat("Callable[%s]", arguments);
 			}

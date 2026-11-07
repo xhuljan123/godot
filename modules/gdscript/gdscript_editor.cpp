@@ -853,8 +853,16 @@ static String _make_arguments_hint(const MethodInfo &p_info, int p_arg_idx, bool
 }
 
 // Argument hint for `call()` on a typed callable (`Callable[int, String]`), like `Variant call(arg1: int, arg2: String = ...)`.
+// With a return type (`Callable[int, String][bool]`), `call()` shows it: `bool call(arg1: int, arg2: String)`.
 static String _make_typed_callable_arguments_hint(const GDScriptParser::DataType &p_callable_type, const StringName &p_method, int p_arg_idx) {
-	String arghint = String(p_method == SNAME("call_deferred") ? "void " : "Variant ") + String(p_method) + "(";
+	String return_type = "Variant";
+	if (p_method == SNAME("call_deferred")) {
+		return_type = "void";
+	} else if (p_callable_type.has_typed_callable_return_type()) {
+		const GDScriptParser::DataType callable_return = p_callable_type.get_callable_return_type();
+		return_type = (callable_return.kind == GDScriptParser::DataType::BUILTIN && callable_return.builtin_type == Variant::NIL) ? String("void") : callable_return.to_string();
+	}
+	String arghint = return_type + " " + String(p_method) + "(";
 
 	const int arg_count = p_callable_type.callable_arg_types.size();
 	const int required_count = p_callable_type.get_callable_required_arg_count();
@@ -2261,6 +2269,16 @@ static bool _guess_expression_type(GDScriptParser::CompletionContext &p_context,
 
 				// Apply additional behavior aware inference that the analyzer can't do.
 				if (base.type.is_set()) {
+					// `call()` on a typed callable with a return type (`Callable[int][bool]`) returns that type.
+					if (base.type.is_typed_callable_type() && base.type.has_typed_callable_return_type() && (call->function_name == SNAME("call") || call->function_name == SNAME("callv"))) {
+						r_type = GDScriptCompletionIdentifier();
+						r_type.type = base.type.get_callable_return_type();
+						r_type.type.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
+						r_type.type.is_constant = false;
+						found = true;
+						break;
+					}
+
 					// Maintain type for duplicate methods.
 					if (call->function_name == SNAME("duplicate")) {
 						if (base.type.builtin_type == Variant::OBJECT && (ClassDB::is_parent_class(base.type.native_type, SNAME("Resource")) || ClassDB::is_parent_class(base.type.native_type, SNAME("Node")))) {

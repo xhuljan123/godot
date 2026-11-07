@@ -132,6 +132,9 @@ public:
 		int callable_default_arg_count = 0;
 		// Extra arguments are accepted (rest parameter or native vararg method).
 		bool callable_is_vararg = false;
+		// Return type (`Callable[int, String][bool]`), size 0 or 1. Empty if unknown (`Callable[int]`): calling returns `Variant`.
+		// For lambdas and function references it's the declared return type (a non-hard `Variant` if there's none).
+		Vector<DataType> callable_return_type;
 
 		enum Kind {
 			BUILTIN,
@@ -262,11 +265,21 @@ public:
 
 		_FORCE_INLINE_ int get_callable_required_arg_count() const { return callable_arg_types.size() - callable_default_arg_count; }
 
+		_FORCE_INLINE_ bool has_callable_return_type() const { return !callable_return_type.is_empty(); }
+		// A return type that `call()` can be typed as: declared (hard) and not `Variant`.
+		_FORCE_INLINE_ bool has_typed_callable_return_type() const { return !callable_return_type.is_empty() && callable_return_type[0].is_hard_type() && callable_return_type[0].kind != VARIANT; }
+		_FORCE_INLINE_ DataType get_callable_return_type() const { return callable_return_type.is_empty() ? get_variant_type() : callable_return_type[0]; }
+		void set_callable_return_type(const DataType &p_type) {
+			callable_return_type.clear();
+			callable_return_type.push_back(p_type);
+		}
+
 		void clear_callable_signature() {
 			is_typed_callable = false;
 			callable_arg_types.clear();
 			callable_default_arg_count = 0;
 			callable_is_vararg = false;
+			callable_return_type.clear();
 		}
 
 		_FORCE_INLINE_ int find_struct_key(const StringName &p_key) const {
@@ -387,6 +400,7 @@ public:
 			callable_arg_types = p_other.callable_arg_types;
 			callable_default_arg_count = p_other.callable_default_arg_count;
 			callable_is_vararg = p_other.callable_is_vararg;
+			callable_return_type = p_other.callable_return_type;
 		}
 
 		DataType() = default;
@@ -1392,6 +1406,8 @@ public:
 
 		// `Callable[int, String]`: the argument types are in `container_types` (can be empty for `Callable[]`).
 		bool is_callable_signature = false;
+		// `Callable[int, String][bool]`: the return type (can be `void`). Null if not specified.
+		TypeNode *callable_return_type = nullptr;
 
 		// Utility types that produce a struct type from another type (the argument is `container_types[0]`).
 		enum StructModifier {

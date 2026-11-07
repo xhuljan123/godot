@@ -173,6 +173,8 @@ class GDScriptAnalyzer {
 	void flush_pending_struct_key_errors();
 	// Typed callables (`Callable[int, String]`).
 	static bool is_callable_signature_compatible(const GDScriptParser::DataType &p_target, const GDScriptParser::DataType &p_source, String *r_reason = nullptr);
+	static bool is_callable_return_compatible(const GDScriptParser::DataType &p_target, const GDScriptParser::DataType &p_source, String *r_reason = nullptr);
+	static bool is_callable_return_unsafe(const GDScriptParser::DataType &p_target, const GDScriptParser::DataType &p_source);
 	static void set_callable_signature_from_function(GDScriptParser::DataType &r_type, const GDScriptParser::FunctionNode *p_function);
 	void set_callable_signature_from_method_info(GDScriptParser::DataType &r_type, const MethodInfo &p_info, const GDScriptParser::Node *p_source) const;
 
@@ -211,6 +213,7 @@ public:
 	Variant make_variable_default_value(GDScriptParser::VariableNode *p_variable);
 
 	static bool check_type_compatibility(const GDScriptParser::DataType &p_target, const GDScriptParser::DataType &p_source, bool p_allow_implicit_conversion = false, const GDScriptParser::Node *p_source_node = nullptr);
+	static bool is_typed_callable_return_call(const GDScriptParser::CallNode *p_call);
 	static GDScriptParser::DataType type_from_metatype(const GDScriptParser::DataType &p_meta_type);
 	static bool class_exists(const StringName &p_class);
 

@@ -1,0 +1,7 @@
+GDTEST_ANALYZER_ERROR
+>> ERROR at line 8: Cannot assign a value of type Callable[int][String] to variable "a" with specified type Callable[int][int]. The function returns "String", but "Callable[int][int]" must return "int".
+>> ERROR at line 9: Cannot assign a value of type Callable[int] to variable "b" with specified type Callable[int][int]. The function has no return type, but "Callable[int][int]" must return "int". Add "-> int" to the function.
+>> ERROR at line 10: Cannot assign a value of type Callable[int][void] to variable "c" with specified type Callable[int][int]. The function returns "void", but "Callable[int][int]" must return "int".
+>> ERROR at line 11: Cannot assign a value of type Callable[int] to variable "d" with specified type Callable[int][int]. The function has no return type, but "Callable[int][int]" must return "int". Add "-> int" to the function.
+>> ERROR at line 13: Cannot assign a value of type String to variable "f" with specified type int.
+>> ERROR at line 15: Cannot get return value of call to "call()" because it returns "void".

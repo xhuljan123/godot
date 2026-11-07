@@ -1063,6 +1063,13 @@ GDScriptParser::DataType GDScriptAnalyzer::resolve_datatype(GDScriptParser::Type
 					argument_type.is_read_only = false;
 					result.callable_arg_types.push_back(argument_type);
 				}
+				if (p_type->callable_return_type != nullptr) {
+					// `Callable[int, String][bool]`: `call()` returns this type, and assigned functions must return it.
+					GDScriptParser::DataType return_type = type_from_metatype(resolve_datatype(p_type->callable_return_type));
+					return_type.is_constant = false;
+					return_type.is_read_only = false;
+					result.set_callable_return_type(return_type);
+				}
 			}
 			if (builtin_type == Variant::DICTIONARY) {
 				GDScriptParser::DataType key_type = type_from_metatype(resolve_datatype(p_type->get_container_type_or_null(0)));
@@ -2542,6 +2549,9 @@ void GDScriptAnalyzer::resolve_assignable(GDScriptParser::AssignableNode *p_assi
 			} else if (is_struct_assignment_unsafe(specified_type, initializer_type)) {
 				mark_node_unsafe(p_assignable->initializer);
 			} else if (specified_type.is_typed_callable_type()) {
+				if (is_callable_return_unsafe(specified_type, initializer_type)) {
+					mark_node_unsafe(p_assignable->initializer);
+				}
 				if (!initializer_type.is_typed_callable_type()) {
 					// The signature of the assigned callable is unknown.
 					mark_node_unsafe(p_assignable->initializer);
@@ -3800,7 +3810,72 @@ bool GDScriptAnalyzer::is_callable_signature_compatible(const GDScriptParser::Da
 			return false;
 		}
 	}
+
+	return is_callable_return_compatible(p_target, p_source, r_reason);
+}
+
+static bool is_void_datatype(const GDScriptParser::DataType &p_type) {
+	return p_type.is_hard_type() && p_type.kind == GDScriptParser::DataType::BUILTIN && p_type.builtin_type == Variant::NIL;
+}
+
+// Return type of typed callables (`Callable[int][bool]`). Return types are covariant: the function must return the declared type
+// (or a subtype). A `void` return type accepts any function, since the returned value is never used.
+// A function without a return type is an error, since `call()` is typed as the declared return type.
+// A `Variant` return type (or an unknown one, like from `Callable[int]`) is accepted, but unsafe (see `is_callable_return_unsafe()`).
+bool GDScriptAnalyzer::is_callable_return_compatible(const GDScriptParser::DataType &p_target, const GDScriptParser::DataType &p_source, String *r_reason) {
+	if (!p_target.has_typed_callable_return_type() || is_void_datatype(p_target.get_callable_return_type())) {
+		return true;
+	}
+	const GDScriptParser::DataType target_return = p_target.get_callable_return_type();
+	const String target_return_name = target_return.to_string();
+	const GDScriptParser::DataType source_return = p_source.get_callable_return_type();
+	if (!source_return.is_set() || !source_return.is_hard_type()) {
+		if (r_reason) {
+			*r_reason = vformat(R"(The function has no return type, but "%s" must return "%s". Add "-> %s" to the function.)", p_target.to_string(), target_return_name, target_return_name);
+		}
+		return false;
+	}
+	if (source_return.is_variant()) {
+		return true; // Checked at runtime.
+	}
+	if (is_void_datatype(source_return)) {
+		if (r_reason) {
+			*r_reason = vformat(R"(The function returns "void", but "%s" must return "%s".)", p_target.to_string(), target_return_name);
+		}
+		return false;
+	}
+	if (!check_type_compatibility(target_return, source_return, true)) {
+		if (r_reason) {
+			*r_reason = vformat(R"(The function returns "%s", but "%s" must return "%s".)", source_return.to_string(), p_target.to_string(), target_return_name);
+		}
+		return false;
+	}
 	return true;
+}
+
+// A callable whose return type is `Variant` or unknown, assigned to a typed callable with a return type: what `call()` returns
+// can't be checked statically (it's checked at runtime when `call()` returns).
+bool GDScriptAnalyzer::is_callable_return_unsafe(const GDScriptParser::DataType &p_target, const GDScriptParser::DataType &p_source) {
+	if (!p_target.is_typed_callable_type() || !p_target.has_typed_callable_return_type() || is_void_datatype(p_target.get_callable_return_type())) {
+		return false;
+	}
+	return !p_source.is_typed_callable_type() || p_source.get_callable_return_type().is_variant();
+}
+
+// `call()` (or `callv()`) on a hard typed callable with a return type (`Callable[int][bool]`): the call is typed as the return type.
+bool GDScriptAnalyzer::is_typed_callable_return_call(const GDScriptParser::CallNode *p_call) {
+	if (p_call == nullptr || p_call->is_super || p_call->callee == nullptr || p_call->callee->type != GDScriptParser::Node::SUBSCRIPT) {
+		return false;
+	}
+	if (p_call->function_name != SNAME("call") && p_call->function_name != SNAME("callv")) {
+		return false;
+	}
+	const GDScriptParser::SubscriptNode *subscript = static_cast<const GDScriptParser::SubscriptNode *>(p_call->callee);
+	if (!subscript->is_attribute || subscript->base == nullptr) {
+		return false;
+	}
+	const GDScriptParser::DataType &base_type = subscript->base->type_constraint;
+	return base_type.is_typed_callable_type() && base_type.is_hard_type() && base_type.has_typed_callable_return_type();
 }
 
 void GDScriptAnalyzer::set_callable_signature_from_function(GDScriptParser::DataType &r_type, const GDScriptParser::FunctionNode *p_function) {
@@ -3819,6 +3894,12 @@ void GDScriptAnalyzer::set_callable_signature_from_function(GDScriptParser::Data
 		}
 	}
 	r_type.callable_is_vararg = p_function->is_vararg();
+	// A function without a return type has a non-hard `Variant` return type, which is kept as "unknown".
+	GDScriptParser::DataType return_type = p_function->return_type_constraint;
+	return_type.is_constant = false;
+	return_type.is_read_only = false;
+	return_type.is_coroutine = false;
+	r_type.set_callable_return_type(return_type);
 }
 
 void GDScriptAnalyzer::set_callable_signature_from_method_info(GDScriptParser::DataType &r_type, const MethodInfo &p_info, const GDScriptParser::Node *p_source) const {
@@ -3829,6 +3910,7 @@ void GDScriptAnalyzer::set_callable_signature_from_method_info(GDScriptParser::D
 	}
 	r_type.callable_default_arg_count = MIN(p_info.default_arguments.size(), r_type.callable_arg_types.size());
 	r_type.callable_is_vararg = (p_info.flags & METHOD_FLAG_VARARG) != 0;
+	r_type.set_callable_return_type(type_from_property(p_info.return_val, false, p_source));
 }
 
 // Every key accepted by `p_source` must be accepted by `p_target` (both are `KeyOf` types).
@@ -4201,7 +4283,7 @@ void GDScriptAnalyzer::reduce_assignment(GDScriptParser::AssignmentNode *p_assig
 					// weak non-variant assignee and incompatible result
 					downgrades_assignee = true;
 				}
-			} else if (is_struct_assignment_unsafe(assignee_type, op_type) || (assignee_type.has_container_element_type(0) && !op_type.has_container_element_type(0)) || (assignee_type.has_container_element_type(1) && !op_type.has_container_element_type(1)) || (assignee_type.is_typed_callable_type() && !op_type.is_typed_callable_type())) {
+			} else if (is_struct_assignment_unsafe(assignee_type, op_type) || (assignee_type.has_container_element_type(0) && !op_type.has_container_element_type(0)) || (assignee_type.has_container_element_type(1) && !op_type.has_container_element_type(1)) || (assignee_type.is_typed_callable_type() && !op_type.is_typed_callable_type()) || is_callable_return_unsafe(assignee_type, op_type)) {
 				// Typed assignee and untyped result.
 				mark_node_unsafe(p_assignment);
 			}
@@ -4823,6 +4905,13 @@ void GDScriptAnalyzer::reduce_call(GDScriptParser::CallNode *p_call, bool p_is_a
 			}
 			default_arg_count = base_type.callable_default_arg_count;
 			is_vararg = base_type.callable_is_vararg;
+		}
+		if (is_typed_callable_return_call(p_call)) {
+			// `Callable[int][bool]`: `call()` returns the declared return type (checked at runtime by the compiled code).
+			return_type = base_type.get_callable_return_type();
+			return_type.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
+			return_type.is_constant = false;
+			return_type.is_read_only = false;
 		}
 		// If the method is implemented in the class hierarchy, the virtual/abstract flag will not be set for that `MethodInfo` and the search stops there.
 		// Virtual/abstract check only possible for super calls because class hierarchy is known. Objects may have scripts attached we don't know of at compile-time.
@@ -5505,6 +5594,8 @@ void GDScriptAnalyzer::reduce_identifier_from_base(GDScriptParser::IdentifierNod
 							set_callable_signature_from_function(p_identifier->type_constraint, member.function);
 						} else {
 							set_callable_signature_from_method_info(p_identifier->type_constraint, member.function->info, p_identifier);
+							// The return type isn't known yet (the info of an unresolved function would make it look like `void`).
+							p_identifier->type_constraint.callable_return_type.clear();
 						}
 						p_identifier->source = GDScriptParser::IdentifierNode::MEMBER_FUNCTION;
 						p_identifier->function_source = member.function;

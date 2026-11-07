@@ -124,6 +124,13 @@ void GDScriptDocGen::_doctype_from_datatype(const DataType &p_datatype, String &
 					arguments += p_datatype.callable_arg_types.is_empty() ? "..." : ", ...";
 				}
 				r_type = "Callable[" + arguments + "]";
+				if (p_datatype.has_callable_return_type() && p_datatype.get_callable_return_type().is_hard_type()) {
+					// `Callable[int, String][bool]`.
+					const GDScriptParser::DataType return_datatype = p_datatype.get_callable_return_type();
+					String return_type, return_enum;
+					_doctype_from_datatype(return_datatype, return_type, return_enum, true); // `void` for no return value.
+					r_type += "[" + (return_enum.is_empty() ? return_type : return_enum) + "]";
+				}
 				return;
 			}
 			if (p_datatype.builtin_type == Variant::DICTIONARY && p_datatype.has_container_element_types()) {

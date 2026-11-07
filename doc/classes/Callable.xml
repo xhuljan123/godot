@@ -54,6 +54,15 @@
 			on_hit.call(10)  # Valid, "source" has a default value.
 			on_hit.call("10")  # Compile error, argument 1 should be "int".
 		[/codeblock]
+		A second pair of brackets declares the return type, like [code]Callable[int, String][bool][/code]. Assigned functions and lambdas must then declare a compatible return type (with [code]-&gt;[/code]), and [method call] returns that type, so its result can be used with static typing. A [code]void[/code] return type ([code]Callable[int][void][/code]) accepts any function. If the assigned callable can't be checked statically (like an untyped [Callable]), the value returned by [method call] is checked at runtime.
+		[codeblock]
+		var get_damage: Callable[int, String][int] = func(base: int, source: String) -&gt; int:
+			return base * 2 if source == "crit" else base
+
+		func _ready():
+			var damage := get_damage.call(10, "crit")  # "damage" is an int.
+			get_damage = func(base: int, source: String) -&gt; String: return source  # Compile error, the function must return "int".
+		[/codeblock]
 		In GDScript, you can access methods and global functions as [Callable]s:
 		[codeblock]
 		tween.tween_callback(node.queue_free)  # Object methods.

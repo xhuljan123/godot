@@ -659,6 +659,12 @@ GDScriptCodeGenerator::Address GDScriptCompiler::_parse_expression(CodeGen &code
 				result = codegen.add_temporary(_gdtype_from_datatype(call->type_constraint, codegen.script));
 			}
 
+			// `call()` on a typed callable with a return type (`Callable[int][bool]`) is typed as the return type, but the callable
+			// may return anything at runtime (e.g. an untyped `Callable` assigned to it). Call into an untyped temporary,
+			// then assign it to the typed result, which checks (and converts) the value.
+			const bool checks_callable_return = !p_root && !is_awaited && result.type.has_type() && GDScriptAnalyzer::is_typed_callable_return_call(call);
+			GDScriptCodeGenerator::Address call_target = checks_callable_return ? codegen.add_temporary() : result;
+
 			Vector<GDScriptCodeGenerator::Address> arguments;
 			for (uint32_t i = 0; i < call->arguments.size(); i++) {
 				GDScriptCodeGenerator::Address arg = _parse_expression(codegen, r_error, call->arguments[i]);
@@ -669,20 +675,20 @@ GDScriptCodeGenerator::Address GDScriptCompiler::_parse_expression(CodeGen &code
 			}
 
 			if (!call->is_super && call->callee->type == GDScriptParser::Node::IDENTIFIER && GDScriptParser::get_builtin_type(call->function_name) < Variant::VARIANT_MAX) {
-				gen->write_construct(result, GDScriptParser::get_builtin_type(call->function_name), arguments);
+				gen->write_construct(call_target, GDScriptParser::get_builtin_type(call->function_name), arguments);
 			} else if (!call->is_super && call->callee->type == GDScriptParser::Node::IDENTIFIER && Variant::has_utility_function(call->function_name)) {
 				// Variant utility function.
-				gen->write_call_utility(result, call->function_name, arguments);
+				gen->write_call_utility(call_target, call->function_name, arguments);
 			} else if (!call->is_super && call->callee->type == GDScriptParser::Node::IDENTIFIER && GDScriptUtilityFunctions::function_exists(call->function_name)) {
 				// GDScript utility function.
-				gen->write_call_gdscript_utility(result, call->function_name, arguments);
+				gen->write_call_gdscript_utility(call_target, call->function_name, arguments);
 			} else {
 				// Regular function.
 				const GDScriptParser::ExpressionNode *callee = call->callee;
 
 				if (call->is_super) {
 					// Super call.
-					gen->write_super_call(result, call->function_name, arguments);
+					gen->write_super_call(call_target, call->function_name, arguments);
 				} else {
 					if (callee->type == GDScriptParser::Node::IDENTIFIER) {
 						// Self function call.
@@ -694,24 +700,24 @@ GDScriptCodeGenerator::Address GDScriptCompiler::_parse_expression(CodeGen &code
 
 							if (_can_use_validate_call(method, arguments)) {
 								// Exact arguments, use validated call.
-								gen->write_call_method_bind_validated(result, self, method, arguments);
+								gen->write_call_method_bind_validated(call_target, self, method, arguments);
 							} else {
 								// Not exact arguments, but still can use method bind call.
-								gen->write_call_method_bind(result, self, method, arguments);
+								gen->write_call_method_bind(call_target, self, method, arguments);
 							}
 						} else if (call->is_static || codegen.is_static || (codegen.function_node && codegen.function_node->is_static) || call->function_name == "new") {
 							GDScriptCodeGenerator::Address self;
 							self.mode = GDScriptCodeGenerator::Address::CLASS;
 							if (is_awaited) {
-								gen->write_call_async(result, self, call->function_name, arguments);
+								gen->write_call_async(call_target, self, call->function_name, arguments);
 							} else {
-								gen->write_call(result, self, call->function_name, arguments);
+								gen->write_call(call_target, self, call->function_name, arguments);
 							}
 						} else {
 							if (is_awaited) {
-								gen->write_call_self_async(result, call->function_name, arguments);
+								gen->write_call_self_async(call_target, call->function_name, arguments);
 							} else {
-								gen->write_call_self(result, call->function_name, arguments);
+								gen->write_call_self(call_target, call->function_name, arguments);
 							}
 						}
 					} else if (callee->type == GDScriptParser::Node::SUBSCRIPT) {
@@ -720,7 +726,7 @@ GDScriptCodeGenerator::Address GDScriptCompiler::_parse_expression(CodeGen &code
 						if (subscript->is_attribute) {
 							// May be static built-in method call.
 							if (!call->is_super && subscript->base->type == GDScriptParser::Node::IDENTIFIER && GDScriptParser::get_builtin_type(static_cast<GDScriptParser::IdentifierNode *>(subscript->base)->name) < Variant::VARIANT_MAX) {
-								gen->write_call_builtin_type_static(result, GDScriptParser::get_builtin_type(static_cast<GDScriptParser::IdentifierNode *>(subscript->base)->name), subscript->attribute->name, arguments);
+								gen->write_call_builtin_type_static(call_target, GDScriptParser::get_builtin_type(static_cast<GDScriptParser::IdentifierNode *>(subscript->base)->name), subscript->attribute->name, arguments);
 							} else if (!call->is_super && subscript->base->type == GDScriptParser::Node::IDENTIFIER && call->function_name != SNAME("new") &&
 									static_cast<GDScriptParser::IdentifierNode *>(subscript->base)->source == GDScriptParser::IdentifierNode::NATIVE_CLASS && !Engine::get_singleton()->has_singleton(static_cast<GDScriptParser::IdentifierNode *>(subscript->base)->name)) {
 								// It's a static native method call.
@@ -728,10 +734,10 @@ GDScriptCodeGenerator::Address GDScriptCompiler::_parse_expression(CodeGen &code
 								const MethodBind *method = ClassDB::get_method(class_name, subscript->attribute->name);
 								if (_can_use_validate_call(method, arguments)) {
 									// Exact arguments, use validated call.
-									gen->write_call_native_static_validated(result, method, arguments);
+									gen->write_call_native_static_validated(call_target, method, arguments);
 								} else {
 									// Not exact arguments, use regular static call
-									gen->write_call_native_static(result, class_name, subscript->attribute->name, arguments);
+									gen->write_call_native_static(call_target, class_name, subscript->attribute->name, arguments);
 								}
 							} else {
 								GDScriptCodeGenerator::Address base = _parse_expression(codegen, r_error, subscript->base);
@@ -739,7 +745,7 @@ GDScriptCodeGenerator::Address GDScriptCompiler::_parse_expression(CodeGen &code
 									return GDScriptCodeGenerator::Address();
 								}
 								if (is_awaited) {
-									gen->write_call_async(result, base, call->function_name, arguments);
+									gen->write_call_async(call_target, base, call->function_name, arguments);
 								} else if (base.type.kind != GDScriptDataType::VARIANT && base.type.kind != GDScriptDataType::BUILTIN) {
 									// Native method, use faster path.
 									StringName class_name;
@@ -752,18 +758,18 @@ GDScriptCodeGenerator::Address GDScriptCompiler::_parse_expression(CodeGen &code
 										const MethodBind *method = ClassDB::get_method(class_name, call->function_name);
 										if (_can_use_validate_call(method, arguments)) {
 											// Exact arguments, use validated call.
-											gen->write_call_method_bind_validated(result, base, method, arguments);
+											gen->write_call_method_bind_validated(call_target, base, method, arguments);
 										} else {
 											// Not exact arguments, but still can use method bind call.
-											gen->write_call_method_bind(result, base, method, arguments);
+											gen->write_call_method_bind(call_target, base, method, arguments);
 										}
 									} else {
-										gen->write_call(result, base, call->function_name, arguments);
+										gen->write_call(call_target, base, call->function_name, arguments);
 									}
 								} else if (base.type.kind == GDScriptDataType::BUILTIN) {
-									gen->write_call_builtin_type(result, base, base.type.builtin_type, call->function_name, arguments);
+									gen->write_call_builtin_type(call_target, base, base.type.builtin_type, call->function_name, arguments);
 								} else {
-									gen->write_call(result, base, call->function_name, arguments);
+									gen->write_call(call_target, base, call->function_name, arguments);
 								}
 								if (base.mode == GDScriptCodeGenerator::Address::TEMPORARY) {
 									gen->pop_temporary();
@@ -786,6 +792,10 @@ GDScriptCodeGenerator::Address GDScriptCompiler::_parse_expression(CodeGen &code
 				if (arguments[i].mode == GDScriptCodeGenerator::Address::TEMPORARY) {
 					gen->pop_temporary();
 				}
+			}
+			if (checks_callable_return) {
+				gen->write_assign_with_conversion(result, call_target);
+				gen->pop_temporary(); // `call_target`, allocated after `result` and before the arguments.
 			}
 			return result;
 		} break;

@@ -473,10 +473,49 @@ static PackedStringArray _split_callable_type_arguments(const String &p_argument
 
 static void _add_type_to_rt(const String &p_type, const String &p_enum, bool p_is_bitfield, RichTextLabel *p_rt, const Control *p_owner_node, const String &p_class);
 
-// Adds a GDScript typed callable (`Callable[int, String]`), with a link for each argument type.
+// Index of the "]" matching the "[" at `p_open` (or -1).
+static int _find_matching_bracket(const String &p_text, int p_open) {
+	int depth = 0;
+	for (int i = p_open; i < p_text.length(); i++) {
+		const char32_t c = p_text[i];
+		if (c == '[' || c == '{' || c == '(') {
+			depth++;
+		} else if (c == ']' || c == '}' || c == ')') {
+			depth--;
+			if (depth == 0) {
+				return i;
+			}
+		}
+	}
+	return -1;
+}
+
+static void _add_rt_type_or_enum(const String &p_type, RichTextLabel *p_rt, const Control *p_owner_node, const String &p_class) {
+	if (p_type.contains_char('.') && !p_type.contains_char('[') && !ClassDB::class_exists(p_type)) {
+		// Enum (like `Node.ProcessMode`).
+		_add_type_to_rt("int", p_type, false, p_rt, p_owner_node, p_class);
+	} else {
+		_add_type_to_rt(p_type, String(), false, p_rt, p_owner_node, p_class);
+	}
+}
+
+// Adds a GDScript typed callable (`Callable[int, String]`, or `Callable[int, String][bool]` with a return type),
+// with a link for each argument type and the return type.
 static void _add_callable_type_to_rt(const String &p_type, RichTextLabel *p_rt, const Control *p_owner_node, const String &p_class) {
 	const Color type_color = p_owner_node->get_theme_color(SNAME("type_color"), SNAME("EditorHelp"));
-	const String arguments = p_type.trim_prefix("Callable[").trim_suffix("]");
+	const int arguments_open = String("Callable").length();
+	int arguments_close = _find_matching_bracket(p_type, arguments_open);
+	if (arguments_close < 0) {
+		arguments_close = p_type.length() - 1;
+	}
+	const String arguments = p_type.substr(arguments_open + 1, arguments_close - arguments_open - 1);
+	String return_type;
+	if (arguments_close + 1 < p_type.length() && p_type[arguments_close + 1] == '[') {
+		const int return_close = _find_matching_bracket(p_type, arguments_close + 1);
+		if (return_close > arguments_close + 2) {
+			return_type = p_type.substr(arguments_close + 2, return_close - arguments_close - 2);
+		}
+	}
 
 	p_rt->push_color(type_color);
 	p_rt->push_meta("#Callable", RichTextLabel::META_UNDERLINE_ON_HOVER); // class
@@ -499,17 +538,26 @@ static void _add_callable_type_to_rt(const String &p_type, RichTextLabel *p_rt, 
 			p_rt->add_text("...");
 			p_rt->pop(); // hint
 			p_rt->pop(); // color
-		} else if (argument_type.contains_char('.') && !argument_type.contains_char('[') && !ClassDB::class_exists(argument_type)) {
-			// Enum (like `Node.ProcessMode`).
-			_add_type_to_rt("int", argument_type, false, p_rt, p_owner_node, p_class);
 		} else {
-			_add_type_to_rt(argument_type, String(), false, p_rt, p_owner_node, p_class);
+			_add_rt_type_or_enum(argument_type, p_rt, p_owner_node, p_class);
 		}
 	}
 
 	p_rt->push_color(type_color);
 	p_rt->add_text("]");
 	p_rt->pop(); // color
+
+	if (!return_type.is_empty()) {
+		p_rt->push_color(type_color);
+		p_rt->push_hint(TTR("Return type: calling it returns this type."));
+		p_rt->add_text("[");
+		p_rt->pop(); // hint
+		p_rt->pop(); // color
+		_add_rt_type_or_enum(return_type, p_rt, p_owner_node, p_class); // Also handles `void`.
+		p_rt->push_color(type_color);
+		p_rt->add_text("]");
+		p_rt->pop(); // color
+	}
 }
 
 static void _add_type_to_rt(const String &p_type, const String &p_enum, bool p_is_bitfield, RichTextLabel *p_rt, const Control *p_owner_node, const String &p_class) {
