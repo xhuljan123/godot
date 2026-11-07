@@ -4002,7 +4002,16 @@ bool GDScriptAnalyzer::is_typed_callable_return_call(const GDScriptParser::CallN
 	if (!subscript->is_attribute || subscript->base == nullptr) {
 		return false;
 	}
+	if (subscript->base->type == GDScriptParser::Node::LAMBDA) {
+		// `(func() -> int: ...).call()`: keep the untyped result, like a direct function reference.
+		return false;
+	}
 	const GDScriptParser::DataType &base_type = subscript->base->type_constraint;
+	if (base_type.method_info.name != StringName()) {
+		// A direct function reference (`foo.call()`, `self.foo.call()`, `print.call()`). Its signature is only used to check assignments to typed callables:
+		// the result stays untyped, as in `Callable.call()`, so the result of a `void` function can still be read (`null`) and coroutines can be awaited.
+		return false;
+	}
 	return base_type.is_typed_callable_type() && base_type.is_hard_type() && base_type.has_typed_callable_return_type();
 }
 
@@ -4470,7 +4479,9 @@ void GDScriptAnalyzer::reduce_await(GDScriptParser::AwaitNode *p_await) {
 
 #ifdef DEBUG_ENABLED
 	GDScriptParser::DataType to_await_type = p_await->to_await->type_constraint;
-	if (!to_await_type.is_coroutine && !to_await_type.is_variant() && to_await_type.builtin_type != Variant::SIGNAL) {
+	// The function stored in a typed callable (`Callable[][void]`) may be a coroutine.
+	const bool is_typed_callable_call = p_await->to_await->type == GDScriptParser::Node::CALL && is_typed_callable_return_call(static_cast<const GDScriptParser::CallNode *>(p_await->to_await));
+	if (!to_await_type.is_coroutine && !to_await_type.is_variant() && to_await_type.builtin_type != Variant::SIGNAL && !is_typed_callable_call) {
 		parser->push_warning(p_await, GDScriptWarning::REDUNDANT_AWAIT);
 	}
 #endif // DEBUG_ENABLED

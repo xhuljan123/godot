@@ -1,4 +1,5 @@
 GDTEST_OK
+~~ WARNING at line 52: (UNSAFE_CALL_ARGUMENT) The argument 1 of the function "foo()" requires the subtype "KeyOf[Struct[{ foo: int, bar: String }]]" but the supertype "Variant" was provided.
 foo
 bar
 bar

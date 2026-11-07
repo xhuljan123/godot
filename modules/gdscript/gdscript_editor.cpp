@@ -2268,7 +2268,9 @@ static bool _guess_expression_type(GDScriptParser::CompletionContext &p_context,
 				}
 
 				// `load_file("res://...")` is typed by the analyzer like `preload()`, with the class of the resource.
-				if (GDScriptAnalyzer::is_load_file_call(call) && call->type_constraint.is_hard_type()) {
+				// `parseOptional(value, default_value)` is typed by the analyzer as `value` (the declared type for an optional struct key).
+				const bool is_parse_optional_call = callee_type == GDScriptParser::Node::IDENTIFIER && !call->is_super && call->function_name == SNAME("parseOptional");
+				if ((GDScriptAnalyzer::is_load_file_call(call) || is_parse_optional_call) && call->type_constraint.is_hard_type()) {
 					r_type = GDScriptCompletionIdentifier();
 					r_type.type = call->type_constraint;
 					found = true;
