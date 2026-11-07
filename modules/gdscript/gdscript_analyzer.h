@@ -55,6 +55,9 @@ class GDScriptAnalyzer {
 	List<GDScriptParser::LambdaNode *> pending_body_resolution_lambdas;
 	HashMap<const GDScriptParser::ClassNode *, Ref<GDScriptParserRef>> external_class_parser_cache;
 	bool static_context = false;
+	// > 0 while folding a value that must be constant (`const` initializers, struct key defaults). Only then is
+	// `load_file()` loaded during analysis (like `preload()`); elsewhere (e.g. member variable defaults) it stays a runtime load.
+	int constant_required_depth = 0;
 
 	// Bare identifier keys in dictionary literals (`{ key: value }`) that could not be resolved as expressions.
 	// They are valid if the literal is used where a `Struct[...]` is expected (TypeScript-like syntax),
@@ -142,6 +145,7 @@ class GDScriptAnalyzer {
 	Variant make_dictionary_reduced_value(GDScriptParser::DictionaryNode *p_dictionary, bool &r_is_reduced);
 	Variant make_subscript_reduced_value(GDScriptParser::SubscriptNode *p_subscript, bool &r_is_reduced);
 	Variant make_call_reduced_value(GDScriptParser::CallNode *p_call, bool &r_is_reduced);
+	Variant make_load_file_reduced_value(GDScriptParser::CallNode *p_call, bool &r_is_reduced);
 	Variant make_binary_op_reduced_value(GDScriptParser::BinaryOpNode *p_binary_op, bool &r_is_reduced);
 	Variant make_ternary_op_reduced_value(GDScriptParser::TernaryOpNode *p_ternary_op, bool &r_is_reduced);
 	Variant make_cast_reduced_value(GDScriptParser::CastNode *p_cast, bool &r_is_reduced);

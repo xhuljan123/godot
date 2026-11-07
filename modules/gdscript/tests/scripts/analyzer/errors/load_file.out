@@ -2,3 +2,5 @@ GDTEST_ANALYZER_ERROR
 >> ERROR at line 2: File "res://does_not_exist.tscn" does not exist.
 >> ERROR at line 3: Invalid argument for "load_file()" function: the path is empty.
 >> ERROR at line 4: File "res://analyzer/errors/load_file.out" has no resource loaders (unrecognized file extension).
+>> ERROR at line 5: File "res://does_not_exist.gdshader" does not exist.
+>> ERROR at line 7: Assigned value for constant "NOT_CONSTANT" isn't a constant expression.

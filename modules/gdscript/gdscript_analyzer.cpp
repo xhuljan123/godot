@@ -2478,7 +2478,9 @@ void GDScriptAnalyzer::resolve_assignable(GDScriptParser::AssignableNode *p_assi
 
 		if (is_constant && !p_assignable->initializer->is_constant) {
 			bool is_initializer_value_reduced = false;
+			constant_required_depth++;
 			Variant initializer_value = make_expression_reduced_value(p_assignable->initializer, is_initializer_value_reduced);
+			constant_required_depth--;
 			if (is_initializer_value_reduced) {
 				p_assignable->initializer->is_constant = true;
 				p_assignable->initializer->reduced_value = initializer_value;
@@ -3656,6 +3658,14 @@ GDScriptParser::DataType GDScriptAnalyzer::reduce_merge_objects_call(GDScriptPar
 	return result;
 }
 
+// Path used by `load_file()`: relative paths are prefixed with "res://", like with `load()`. Empty if `p_path` is empty.
+static String get_load_file_path(const String &p_path) {
+	if (p_path.is_empty()) {
+		return String();
+	}
+	return (p_path.is_relative_path() ? "res://" + p_path : p_path).simplify_path();
+}
+
 // `load_file(path)`: loads the resource at runtime, exactly like `load()`. If `path` is a constant string, the file must exist
 // (reported in the editor before running, like with `preload()`), and the call is typed like `preload()` would be:
 // with the class of the resource (`PackedScene`, `Texture2D`, ...), its script class, or as the script class itself for scripts.
@@ -3670,15 +3680,11 @@ GDScriptParser::DataType GDScriptAnalyzer::reduce_load_file_call(GDScriptParser:
 		return p_default_type;
 	}
 
-	String path = path_node->reduced_value;
+	const String path = get_load_file_path(path_node->reduced_value);
 	if (path.is_empty()) {
 		push_error(R"*(Invalid argument for "load_file()" function: the path is empty.)*", path_node);
 		return p_default_type;
 	}
-	if (path.is_relative_path()) {
-		path = "res://" + path; // Same as `load()`.
-	}
-	path = path.simplify_path();
 
 	if (!ResourceLoader::exists(path)) {
 		Ref<FileAccess> file_check = FileAccess::create(FileAccess::ACCESS_RESOURCES);
@@ -3729,6 +3735,48 @@ GDScriptParser::DataType GDScriptAnalyzer::reduce_load_file_call(GDScriptParser:
 		return result;
 	}
 	return p_default_type;
+}
+
+// `load_file(path)` where a constant is required (`const SHADER = load_file("res://shader.gdshader")`): the resource
+// is loaded when the script is analyzed, like with `preload()`, so the constant has its value. Elsewhere it's only
+// loaded at runtime (see `reduce_load_file_call()`).
+Variant GDScriptAnalyzer::make_load_file_reduced_value(GDScriptParser::CallNode *p_call, bool &r_is_reduced) {
+	if (p_call->arguments.size() != 1 || p_call->arguments[0] == nullptr) {
+		r_is_reduced = true; // Argument count already reported.
+		return Variant();
+	}
+	const GDScriptParser::ExpressionNode *path_node = p_call->arguments[0];
+	if (!path_node->is_constant || (path_node->reduced_value.get_type() != Variant::STRING && path_node->reduced_value.get_type() != Variant::STRING_NAME)) {
+		return Variant(); // Not a constant expression.
+	}
+	const String path = get_load_file_path(path_node->reduced_value);
+	if (path.is_empty() || !ResourceLoader::exists(path)) {
+		r_is_reduced = true; // Already reported by `reduce_load_file_call()`.
+		return Variant();
+	}
+
+	// Same as `preload()`. GDScript files are loaded separately to permit cyclic references,
+	// as `ResourceLoader::load()` detects and rejects those.
+	Ref<Resource> resource;
+	const String res_type = ResourceLoader::get_resource_type(path);
+	if (res_type == "GDScript") {
+		Error err = OK;
+		Ref<GDScript> script = get_depended_shallow_script(path, err);
+		if (err == OK) {
+			resource = script;
+		}
+	} else {
+		Error err = OK;
+		resource = ResourceLoader::load(path, res_type, ResourceFormatLoader::CACHE_MODE_REUSE, &err);
+		if (err == ERR_BUSY) {
+			resource = ResourceLoader::ensure_resource_ref_override_for_outer_load(path, res_type);
+		}
+	}
+	if (resource.is_null()) {
+		push_error(vformat(R"(Could not load resource file "%s" for a constant.)", path), path_node);
+	}
+	r_is_reduced = true;
+	return resource;
 }
 
 // A `load_file()` call (the global function, not a method with the same name).
@@ -4091,7 +4139,9 @@ bool GDScriptAnalyzer::resolve_struct_key_default(const GDScriptParser::TypeNode
 		// Array and dictionary literals (`key: Other = {}`, `key: Other = { a = 1 }`, `tags: Array[String] = []`) are
 		// never marked constant when reduced, so fold them here, like the initializer of a `const`.
 		bool is_reduced = false;
+		constant_required_depth++;
 		const Variant value = make_expression_reduced_value(expression, is_reduced);
+		constant_required_depth--;
 		if (!is_reduced) {
 			push_error(vformat(R"(The default value of struct key "%s" must be a constant expression.)", p_field.name), expression);
 			return false;
@@ -6935,6 +6985,12 @@ Variant GDScriptAnalyzer::make_subscript_reduced_value(GDScriptParser::Subscript
 }
 
 Variant GDScriptAnalyzer::make_call_reduced_value(GDScriptParser::CallNode *p_call, bool &r_is_reduced) {
+	if (is_load_file_call(p_call)) {
+		if (constant_required_depth == 0) {
+			return Variant(); // Loaded at runtime.
+		}
+		return make_load_file_reduced_value(p_call, r_is_reduced);
+	}
 	if (p_call->get_callee_type() == GDScriptParser::Node::IDENTIFIER) {
 		Variant::Type type = Variant::NIL;
 		if (p_call->function_name == SNAME("Array")) {

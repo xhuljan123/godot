@@ -5,3 +5,6 @@ script constant
 hello from the loaded script
 true
 true
+2 true
+script constant hello from the loaded script
+true

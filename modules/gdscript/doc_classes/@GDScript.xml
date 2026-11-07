@@ -193,7 +193,7 @@
 			<return type="Resource" />
 			<param index="0" name="path" type="String" />
 			<description>
-				Loads and returns the [Resource] located at [param path], like [method load]. The resource is loaded when the function is called, not when the script is compiled.
+				Loads and returns the [Resource] located at [param path], like [method load]. The resource is loaded when the function is called, not when the script is compiled. The exception is a constant ([code]const SHADER = load_file("res://shader.gdshader")[/code]): its value must be known when the script is compiled, so the resource is loaded then, like with [method preload].
 				If [param path] is a constant string, the file must exist: a missing file is reported as an error in the editor before running the project, like with [method preload]. The result is then typed like [method preload]'s, with the class of the resource (or as the script class itself for a script), so its members can be used with static typing and autocompletion:
 				[codeblock]
 				var scene := load_file("res://main.tscn") # Typed as PackedScene.
