@@ -549,7 +549,7 @@ Dictionary GDScriptSyntaxHighlighter::_get_line_syntax_highlighting_impl(int p_l
 					}
 				}
 			} else if (struct_utility_types.has(word)) {
-				// Struct type and struct utility types (e.g. `ExtractFromClass[Foo]`): only types when followed by a bracket,
+				// Struct type and struct utility types (e.g. `ExtractExportableVars[Foo]`): only types when followed by a bracket,
 				// so a variable or function with the same name isn't highlighted.
 				int k = to;
 				while (k < line_length && is_whitespace(str[k])) {
@@ -909,13 +909,12 @@ void GDScriptSyntaxHighlighter::_update_cache() {
 	struct_utility_types.insert(SNAME("Partial"));
 	struct_utility_types.insert(SNAME("Required"));
 	struct_utility_types.insert(SNAME("StructFromClass"));
-	struct_utility_types.insert(SNAME("ExtractFromClass"));
+	struct_utility_types.insert(SNAME("ExtractExportableVars"));
 	struct_utility_types.insert(SNAME("StructToVariant"));
 	struct_utility_types.insert(SNAME("Omit"));
-	struct_utility_types.insert(SNAME("KeyOf"));
 	struct_utility_types.insert(SNAME("Pick"));
 	struct_utility_types.insert(SNAME("List"));
-	struct_utility_types.insert(SNAME("ListFrom"));
+	struct_utility_types.insert(SNAME("KeysOf"));
 	struct_utility_types.insert(SNAME("DictionaryWithKeys"));
 	struct_utility_types.insert(SNAME("NestedArray"));
 	struct_utility_types.insert(SNAME("NestedDictionary"));

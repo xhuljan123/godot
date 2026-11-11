@@ -6,3 +6,6 @@ key: key_3
 KEY_2
 b
 PROCESS_MODE_ALWAYS
+2.0
+x = 3.0
+y = 4.0

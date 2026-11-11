@@ -1249,7 +1249,7 @@ static void _list_available_types(bool p_inherit_only, GDScriptParser::Completio
 		r_result.insert(variant_option.display, variant_option);
 
 		// Struct types and struct utility types.
-		static const char *struct_type_names[] = { "Struct", "Partial", "Required", "StructFromClass", "ExtractFromClass", "StructToVariant", "Omit", "KeyOf", "Pick", "List", "ListFrom", "DictionaryWithKeys", "NestedArray", "NestedDictionary" };
+		static const char *struct_type_names[] = { "Struct", "Partial", "Required", "StructFromClass", "ExtractExportableVars", "StructToVariant", "Omit", "Pick", "List", "KeysOf", "DictionaryWithKeys", "NestedArray", "NestedDictionary" };
 		for (const char *struct_type_name : struct_type_names) {
 			EditorLanguage::CompletionOption struct_option(struct_type_name, EditorLanguage::CompletionKind::CLASS);
 			r_result.insert(struct_option.display, struct_option);
@@ -3225,9 +3225,8 @@ static void _find_enumeration_candidates(GDScriptParser::CompletionContext &p_co
 	}
 }
 
-// Suggests the accepted keys (as string literals) where a `KeyOf[StructType]` value is expected.
-// Also suggests the accepted values where a `List[...]` value is expected.
-static void _find_key_of_candidates(const GDScriptParser::DataType &p_type, const GDScriptParser::Node *p_existing, HashMap<String, EditorLanguage::CompletionOption> &r_result) {
+// Suggests the accepted values where a `List[...]` (or `KeysOf[...]`) value is expected: strings as string literals.
+static void _find_value_list_candidates(const GDScriptParser::DataType &p_type, const GDScriptParser::Node *p_existing, HashMap<String, EditorLanguage::CompletionOption> &r_result) {
 	if (p_type.is_value_list_type()) {
 		for (const Variant &value : p_type.value_list_values) {
 			if (value.get_type() == Variant::STRING || value.get_type() == Variant::STRING_NAME) {
@@ -3240,15 +3239,6 @@ static void _find_key_of_candidates(const GDScriptParser::DataType &p_type, cons
 				r_result.insert(option.display, option);
 			}
 		}
-		return;
-	}
-	if (!p_type.is_key_of_type()) {
-		return;
-	}
-	for (const StringName &key : p_type.key_of_values) {
-		EditorLanguage::CompletionOption option = _calculate_string_insertion(p_existing, key, Variant::STRING);
-		option.kind = EditorLanguage::CompletionKind::CONSTANT;
-		r_result.insert(option.display, option);
 	}
 }
 
@@ -3287,7 +3277,7 @@ static void _list_call_arguments(GDScriptParser::CompletionContext &p_context, c
 					if (member.type == GDScriptParser::ClassNode::Member::FUNCTION) {
 						r_arghint = _make_arguments_hint(member.function, p_argidx);
 						if (p_argidx < member.function->parameters.size()) {
-							_find_key_of_candidates(member.function->parameters[p_argidx]->type_constraint, existing_argument, r_result);
+							_find_value_list_candidates(member.function->parameters[p_argidx]->type_constraint, existing_argument, r_result);
 						}
 						return;
 					}
@@ -3828,9 +3818,9 @@ static void _find_call_arguments(GDScriptParser::CompletionContext &p_context, c
 			if (!type.enumeration.is_empty()) {
 				_find_enumeration_candidates(completion_context, type.enumeration, options);
 				r_forced = options.size() > 0;
-			} else if (type.type.is_key_of_type() || type.type.is_value_list_type()) {
-				// `KeyOf[StructType]` and `List[...]`: suggest the accepted keys/values first, then the other identifiers.
-				_find_key_of_candidates(type.type, static_cast<const GDScriptParser::AssignmentNode *>(completion_context.node)->assigned_value, options);
+			} else if (type.type.is_value_list_type()) {
+				// `List[...]` / `KeysOf[...]`: suggest the accepted values first, then the other identifiers.
+				_find_value_list_candidates(type.type, static_cast<const GDScriptParser::AssignmentNode *>(completion_context.node)->assigned_value, options);
 				_find_identifiers(completion_context, false, true, options, 0);
 				r_forced = true;
 			} else {

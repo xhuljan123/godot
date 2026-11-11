@@ -1,0 +1,5 @@
+GDTEST_ANALYZER_ERROR
+>> ERROR at line 2: "KeysOf" expects an enum, a struct type or a constant dictionary, but "NUMBER" is a constant of type "int".
+>> ERROR at line 3: "KeysOf" expects an enum, a struct type or a constant dictionary, but got "Node".
+>> ERROR at line 8: Cannot assign "b" as "List["a"]". Expected one of: "a".
+>> ERROR at line 12: Key "color" of "List["name", "color"]" does not exist in struct type "Config".

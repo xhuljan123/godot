@@ -213,11 +213,6 @@ GDScriptDataType GDScriptCompiler::_gdtype_from_datatype(const GDScriptParser::D
 		}
 	}
 
-	if (p_datatype.is_key_of_type() && result.kind == GDScriptDataType::BUILTIN && result.builtin_type == Variant::STRING) {
-		result.is_key_of = true;
-		result.key_of_values = p_datatype.key_of_values;
-	}
-
 	if (p_datatype.is_value_list_type() && (result.kind == GDScriptDataType::BUILTIN || result.kind == GDScriptDataType::VARIANT)) {
 		result.is_value_list = true;
 		result.value_list_values = p_datatype.value_list_values;

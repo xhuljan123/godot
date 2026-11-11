@@ -1,5 +1,5 @@
-# `ExtractFromClass[ClassType]`: a struct type with a required key for each `@export` variable of a class.
-const Book = preload("extract_from_class_external.notest.gd")
+# `ExtractExportableVars[ClassType]`: a struct type with a required key for each `@export` variable of a class.
+const Book = preload("extract_exportable_vars_external.notest.gd")
 
 class Foo extends Resource:
 	@export var foo := 1
@@ -12,13 +12,13 @@ class SpecialFoo extends Foo:
 	@export_storage var saved_name: String
 	var cache: Dictionary # Not exported: not a key.
 
-type FooExports = ExtractFromClass[Foo]
+type FooExports = ExtractExportableVars[Foo]
 
 func describe(data: FooExports) -> String:
 	return "foo=%d bar=%s" % [data.foo, data.bar]
 
 func test():
-	var data: ExtractFromClass[Foo] = { foo = 2, bar = [1, 2] }
+	var data: ExtractExportableVars[Foo] = { foo = 2, bar = [1, 2] }
 	print(describe(data))
 	var foo_value: int = data.foo
 	var bar_value: Array[int] = data.bar
@@ -26,21 +26,21 @@ func test():
 
 	# Same keys and types as the explicit struct type.
 	var same: Struct[{ foo: int, bar: Array[int] }] = data
-	var back: ExtractFromClass[Foo] = same
+	var back: ExtractExportableVars[Foo] = same
 	print(back.foo)
 
 	# Inherited exported variables are included.
-	var special: ExtractFromClass[SpecialFoo] = { foo = 3, bar = [], level = 5, saved_name = "special" }
+	var special: ExtractExportableVars[SpecialFoo] = { foo = 3, bar = [], level = 5, saved_name = "special" }
 	print(special.level, " ", special.saved_name)
 
 	# Classes from other scripts.
-	var book: ExtractFromClass[Book] = { title = "GDScript" }
+	var book: ExtractExportableVars[Book] = { title = "GDScript" }
 	print(book.title)
 
 	# Works with the other struct utility types and in containers.
-	var patch: Partial[ExtractFromClass[Foo]] = { foo = 4 }
+	var patch: Partial[ExtractExportableVars[Foo]] = { foo = 4 }
 	print(patch.size())
-	var key: KeyOf[ExtractFromClass[SpecialFoo]] = "level"
+	var key: KeysOf[ExtractExportableVars[SpecialFoo]] = "level"
 	print(key)
-	var list: Array[ExtractFromClass[Foo]] = [{ foo = 1, bar = [1] }]
+	var list: Array[ExtractExportableVars[Foo]] = [{ foo = 1, bar = [1] }]
 	print(list[0].bar)

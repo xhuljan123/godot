@@ -81,10 +81,10 @@ class GDScriptAnalyzer {
 	Error resolve_class_inheritance(GDScriptParser::ClassNode *p_class, const GDScriptParser::Node *p_source = nullptr);
 	Error resolve_class_inheritance(GDScriptParser::ClassNode *p_class, bool p_recursive);
 	GDScriptParser::DataType resolve_datatype(GDScriptParser::TypeNode *p_type);
-	// `List[...]`, `ListFrom[...]` and `NestedArray[...]`/`NestedDictionary[...]`.
+	// `List[...]`, `KeysOf[...]` and `NestedArray[...]`/`NestedDictionary[...]`.
 	bool reduce_value_list_value(GDScriptParser::ExpressionNode *p_value, Variant &r_value);
 	static GDScriptParser::DataType make_value_list_type(const Vector<Variant> &p_values);
-	GDScriptParser::DataType resolve_list_from_type(GDScriptParser::TypeNode *p_type);
+	GDScriptParser::DataType resolve_keys_of_type(GDScriptParser::TypeNode *p_type);
 	static bool is_nested_container_type_name(const GDScriptParser::TypeNode *p_type);
 	static bool is_container_element_type_equal(const GDScriptParser::DataType &p_target, const GDScriptParser::DataType &p_source);
 	GDScriptParser::DataType make_struct_type_from_class(GDScriptParser::ClassNode *p_class, const GDScriptParser::Node *p_source, bool p_exported_only = false);
@@ -178,7 +178,6 @@ class GDScriptAnalyzer {
 	void update_dictionary_literal_element_type(GDScriptParser::DictionaryNode *p_dictionary, const GDScriptParser::DataType &p_key_element_type, const GDScriptParser::DataType &p_value_element_type);
 	void update_struct_literal(GDScriptParser::DictionaryNode *p_dictionary, const GDScriptParser::DataType &p_struct_type);
 	void update_literal_for_expected_type(GDScriptParser::ExpressionNode *p_expression, const GDScriptParser::DataType &p_expected_type);
-	static bool is_key_of_compatible(const GDScriptParser::DataType &p_target, const GDScriptParser::DataType &p_source, String *r_reason = nullptr);
 	static bool is_value_list_compatible(const GDScriptParser::DataType &p_target, const GDScriptParser::DataType &p_source, String *r_reason = nullptr);
 	static bool is_struct_compatible(const GDScriptParser::DataType &p_target, const GDScriptParser::DataType &p_source, String *r_reason = nullptr);
 	static bool is_struct_assignment_unsafe(const GDScriptParser::DataType &p_target, const GDScriptParser::DataType &p_source);

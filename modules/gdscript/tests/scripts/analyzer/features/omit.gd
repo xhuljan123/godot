@@ -22,7 +22,7 @@ func test():
 	print(nothing.size())
 
 	# Works with the other struct utility types.
-	var key: KeyOf[Omit[User, { password, note }]] = "role"
+	var key: KeysOf[Omit[User, { password, note }]] = "role"
 	print(key)
 	var patch: Partial[Omit[User, { id }]] = { name = "Eve" }
 	print(patch.name)

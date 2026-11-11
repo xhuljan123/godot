@@ -607,31 +607,6 @@ static void _add_type_to_rt(const String &p_type, const String &p_enum, bool p_i
 		return;
 	}
 
-	if (p_enum.is_empty() && p_type.begins_with("KeyOf[")) {
-		// GDScript `KeyOf[StructType]`: a `String` that can only be one of the struct keys.
-		const bool is_array = p_type.ends_with("][]");
-		const String key_of_type = is_array ? p_type.trim_suffix("[]") : p_type;
-		p_rt->push_color(type_color);
-		if (is_array) {
-			p_rt->push_meta("#Array", RichTextLabel::META_UNDERLINE_ON_HOVER); // class
-			p_rt->add_text("Array");
-			p_rt->pop(); // meta
-			p_rt->add_text("[");
-		}
-		p_rt->push_meta("#String", RichTextLabel::META_UNDERLINE_ON_HOVER); // class
-		p_rt->push_hint(TTR("A String that can only be one of the keys of this struct type."));
-		p_rt->add_text("KeyOf");
-		p_rt->pop(); // hint
-		p_rt->pop(); // meta
-		p_rt->add_text("[");
-		p_rt->pop(); // color
-		_add_type_to_rt(key_of_type.trim_prefix("KeyOf[").trim_suffix("]"), String(), false, p_rt, p_owner_node, p_class);
-		p_rt->push_color(type_color);
-		p_rt->add_text(is_array ? "]]" : "]");
-		p_rt->pop(); // color
-		return;
-	}
-
 	if (p_enum.is_empty() && (p_type.begins_with("List[") || p_type.begins_with("NestedArray[") || p_type.begins_with("NestedDictionary[") || p_type.begins_with("DictionaryWithKeys["))) {
 		// GDScript `List["a", 1]` (accepted values), `NestedArray[...]`/`NestedDictionary[...]` (nested typed collections)
 		// and `DictionaryWithKeys[Keys, Value]` (a dictionary with all the listed keys).

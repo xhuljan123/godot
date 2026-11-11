@@ -1,4 +1,0 @@
-GDTEST_ANALYZER_ERROR
->> ERROR at line 2: "ListFrom" expects an enum, a struct type or a constant dictionary, but "NUMBER" is a constant of type "int".
->> ERROR at line 3: "ListFrom" expects an enum, a struct type or a constant dictionary, but got "Node".
->> ERROR at line 6: Cannot assign "b" as "List["a"]". Expected one of: "a".

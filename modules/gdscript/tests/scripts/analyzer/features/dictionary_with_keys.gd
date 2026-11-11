@@ -1,7 +1,7 @@
 # `DictionaryWithKeys[Keys, Value]`: a dictionary that must have all the keys of the list, with values of the given type.
 type Foo = DictionaryWithKeys[List["foo", "bar"], int]
 enum Stat { HEALTH, MANA }
-type Stats = DictionaryWithKeys[ListFrom[Stat], float]
+type Stats = DictionaryWithKeys[KeysOf[Stat], float]
 
 func total(values: Foo) -> int:
 	return values.foo + values["bar"]

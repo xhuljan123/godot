@@ -114,11 +114,6 @@ void GDScriptDocGen::_doctype_from_datatype(const DataType &p_datatype, String &
 				r_type = p_datatype.to_string_expanded();
 				return;
 			}
-			if (p_datatype.is_key_of_type()) {
-				// Shown with the struct the keys come from (e.g. in hover tooltips), like `KeyOf[Struct[{ name: String }]]`.
-				r_type = p_datatype.to_string_expanded();
-				return;
-			}
 			if (p_datatype.is_typed_callable_type()) {
 				// Shown with the argument types (e.g. in hover tooltips), like `Callable[int, String]`.
 				String arguments;

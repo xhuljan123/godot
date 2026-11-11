@@ -2,7 +2,7 @@ extends Node
 
 type Config = Struct[{ name: String, size: int }]
 
-func describe(key: KeyOf[Config]) -> void:
+func describe(key: KeysOf[Config]) -> void:
 	print(key)
 
 func _ready():

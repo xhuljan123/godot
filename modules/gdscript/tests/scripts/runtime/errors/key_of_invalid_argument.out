@@ -1,4 +1,0 @@
-GDTEST_RUNTIME_ERROR
-~~ WARNING at line 6: (UNSAFE_CALL_ARGUMENT) The argument 1 of the function "foo()" requires the subtype "KeyOf[Struct[{ foo: int, bar: String }]]" but the supertype "Variant" was provided.
->> SCRIPT ERROR at runtime/errors/key_of_invalid_argument.gd:1 on foo(): Invalid argument 1 for "foo()": "baz" is not one of the accepted keys: "foo", "bar".
->> SCRIPT ERROR at runtime/errors/key_of_invalid_argument.gd:6 on test(): Invalid value in function 'foo' in base 'RefCounted (key_of_invalid_argument.gd)'. Argument 1 ("baz") is not one of the accepted keys.

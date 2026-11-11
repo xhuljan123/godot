@@ -182,7 +182,7 @@
 			print(foo.bar) # Prints 2.
 		[/codeblock]
 		A key of a struct type can default to a struct literal, like [code]options: MoveOptions = {}[/code] or [code]options: MoveOptions = { speed = 2 }[/code]. The literal is checked against the key's struct type, and the keys it leaves out use that struct type's own default values. Array and dictionary default values are copied each time a missing key is read, so modifying the value that was read doesn't change the default value (or the struct). [code]Partial[...][/code] keeps the default values, and [code]Required[...][/code] removes them, since every key is then required.
-		In GDScript, [code]ExtractFromClass[ClassType][/code] is a struct type (a statically typed dictionary) with a required key for each variable of a GDScript class that has an [code]@export[/code] annotation (any [code]@export_*[/code] annotation except [annotation @GDScript.@export_tool_button]), including inherited ones, with the same type as the variable. Other variables are left out:
+		In GDScript, [code]ExtractExportableVars[ClassType][/code] is a struct type (a statically typed dictionary) with a required key for each variable of a GDScript class that has an [code]@export[/code] annotation (any [code]@export_*[/code] annotation except [annotation @GDScript.@export_tool_button]), including inherited ones, with the same type as the variable. Other variables are left out:
 		[codeblock]
 		class Foo extends Resource:
 			@export var foo := 1
@@ -190,12 +190,12 @@
 			var test := ["1", "2"] # Not exported: not a key.
 
 		# Same as `Struct[{ foo: int, bar: Array[int] }]`.
-		func save_foo(data: ExtractFromClass[Foo]) -&gt; void:
+		func save_foo(data: ExtractExportableVars[Foo]) -&gt; void:
 			print(data.foo, data.bar)
 
 		func _ready():
 			save_foo({ foo = 2, bar = [1, 2] })
-			var patch: Partial[ExtractFromClass[Foo]] = { foo = 3 } # All keys optional.
+			var patch: Partial[ExtractExportableVars[Foo]] = { foo = 3 } # All keys optional.
 		[/codeblock]
 		[code]Omit[StructType, { key, other }][/code] is a struct type with the keys of [code]StructType[/code] except the listed ones. The other keys keep their type, whether they're optional, and their default value. Listing a key that doesn't exist in [code]StructType[/code] is an error:
 		[codeblock]

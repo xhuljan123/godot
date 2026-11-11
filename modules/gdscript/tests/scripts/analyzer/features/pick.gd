@@ -15,5 +15,5 @@ func test():
 	bar = foo # A struct with more keys can be assigned (structural typing).
 	print(bar.foo)
 
-	var key: KeyOf[Bar] = "foo"
+	var key: KeysOf[Bar] = "foo"
 	print(key)

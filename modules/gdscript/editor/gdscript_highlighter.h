@@ -61,7 +61,7 @@ private:
 	HashMap<StringName, Color> reserved_keywords;
 	HashMap<StringName, Color> member_keywords;
 	HashSet<StringName> global_functions;
-	HashSet<StringName> struct_utility_types; // `Struct`, `Partial`, `ExtractFromClass`, etc. (only highlighted before `[`).
+	HashSet<StringName> struct_utility_types; // `Struct`, `Partial`, `ExtractExportableVars`, etc. (only highlighted before `[`).
 	Color struct_utility_type_color;
 	Color type_alias_keyword_color; // `type` in `type Name = ...`, same color as `var`/`func`.
 

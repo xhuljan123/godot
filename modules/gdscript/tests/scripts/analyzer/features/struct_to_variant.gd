@@ -33,9 +33,9 @@ func test():
 	print(partial_label.has("label"))
 
 	# Combines with the other struct utility types.
-	var from_item: StructToVariant[ExtractFromClass[Item]] = { weight = "heavy", tags = 0 }
+	var from_item: StructToVariant[ExtractExportableVars[Item]] = { weight = "heavy", tags = 0 }
 	print(from_item.weight, " ", from_item.tags)
 	var patch: Partial[StructToVariant[Foo]] = {}
 	print(patch.size())
-	var key: KeyOf[StructToVariant[Foo]] = "bar"
+	var key: KeysOf[StructToVariant[Foo]] = "bar"
 	print(key)

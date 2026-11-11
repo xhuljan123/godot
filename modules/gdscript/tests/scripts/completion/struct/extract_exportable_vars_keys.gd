@@ -5,5 +5,5 @@ class Foo extends Resource:
 	@export var bar: Array[int]
 	var test := ['1', '2']
 
-func use(data: ExtractFromClass[Foo]) -> void:
+func use(data: ExtractExportableVars[Foo]) -> void:
 	data.➡

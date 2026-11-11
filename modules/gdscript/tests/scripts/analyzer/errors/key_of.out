@@ -1,9 +1,0 @@
-GDTEST_ANALYZER_ERROR
->> ERROR at line 8: Cannot return "color" as "KeyOf[Config]". Expected one of: "name", "size".
->> ERROR at line 11: Cannot pass "baz" as "KeyOf[Struct[{ foo: int, bar: String }]]". Expected one of: "foo", "bar".
->> ERROR at line 12: Cannot assign "color" as "KeyOf[Config]". Expected one of: "name", "size".
->> ERROR at line 13: Cannot assign "missing" as "KeyOf[Config]". Expected one of: "name", "size".
->> ERROR at line 15: Value of type "KeyOf[Other]" cannot be assigned to a variable of type "KeyOf[Config]". Key "color" is not one of: "name", "size".
->> ERROR at line 16: "KeyOf" expects a struct type, but got "int".
->> ERROR at line 17: "KeyOf" types cannot be used with the "is" operator. Test for "String" and use "in" with the accepted keys instead.
->> ERROR at line 19: Key "color" of "KeyOf[Other]" does not exist in struct type "Config".
