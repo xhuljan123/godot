@@ -311,7 +311,6 @@ public:
 			value_list_values.clear();
 		}
 
-
 		_FORCE_INLINE_ int get_callable_required_arg_count() const { return callable_arg_types.size() - callable_default_arg_count; }
 
 		_FORCE_INLINE_ bool has_callable_return_type() const { return !callable_return_type.is_empty(); }
