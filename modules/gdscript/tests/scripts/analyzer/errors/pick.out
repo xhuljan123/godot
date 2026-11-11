@@ -1,0 +1,5 @@
+GDTEST_ANALYZER_ERROR
+>> ERROR at line 5: Key "bar" does not exist in struct type "Bar".
+>> ERROR at line 6: Key "qux" does not exist in struct type "Foo".
+>> ERROR at line 7: "Pick" expects a struct type, but got "int".
+>> ERROR at line 8: Key "bar" does not exist in struct type "Bar".

@@ -123,6 +123,8 @@ void GDScriptFunction::_profile_native_call(uint64_t p_t_taken, const String &p_
 // Argument that failed a struct type check in the last call, so the caller can report a struct-specific error.
 // Only read by `_get_call_error()`, so it only exists in debug builds (avoids `-Wunused-but-set-global` in release).
 static thread_local const Variant *last_struct_argument_error = nullptr;
+// Same for an argument that isn't one of the values of a `List[...]` parameter.
+static thread_local const Variant *last_value_list_argument_error = nullptr;
 
 #endif // DEBUG_ENABLED
 
@@ -154,6 +156,11 @@ String GDScriptFunction::_get_call_error(const String &p_where, const Variant **
 			}
 			if (p_err.expected == Variant::ARRAY && p_argptrs[p_err.argument]->get_type() == p_err.expected) {
 				return "Invalid type in " + p_where + ". The array of argument " + itos(p_err.argument + 1) + " (" + _get_var_type(p_argptrs[p_err.argument]) + ") does not have the same element type as the expected typed array argument.";
+			}
+			if (p_argptrs[p_err.argument] == last_value_list_argument_error) {
+				// `List[...]` parameter (the accepted values were printed by the callee).
+				last_value_list_argument_error = nullptr;
+				return "Invalid value in " + p_where + ". Argument " + itos(p_err.argument + 1) + " (" + p_argptrs[p_err.argument]->get_construct_string() + ") is not one of the accepted values.";
 			}
 			if (p_err.expected == Variant::DICTIONARY && p_argptrs[p_err.argument] == last_struct_argument_error) {
 				// Struct shape mismatch (details were printed by the callee).
@@ -259,6 +266,7 @@ void (*type_init_function_table[])(Variant *) = {
 		&&OPCODE_GET_KEYED, \
 		&&OPCODE_GET_KEYED_VALIDATED, \
 		&&OPCODE_GET_INDEXED_VALIDATED, \
+		&&OPCODE_GET_KEYED_OPTIONAL, \
 		&&OPCODE_SET_NAMED, \
 		&&OPCODE_SET_NAMED_VALIDATED, \
 		&&OPCODE_GET_NAMED, \
@@ -571,6 +579,19 @@ Variant GDScriptFunction::call(GDScriptInstance *p_instance, const Variant **p_a
 
 		const int non_vararg_arg_count = MIN(p_argcount, _argument_count);
 		for (int i = 0; i < non_vararg_arg_count; i++) {
+			if (argument_types[i].is_value_list && !argument_types[i].is_type(*p_args[i], true)) {
+				// `List[...]`: list the accepted values, since the generic error only mentions the type.
+#ifdef DEBUG_ENABLED
+				last_value_list_argument_error = p_args[i];
+#endif
+				_err_print_error(String(name).utf8().get_data(), String(source).utf8().get_data(), _initial_line,
+						vformat(R"*(Invalid argument %d for "%s()": %s is not one of the accepted values: %s.)*", i + 1, name, p_args[i]->get_construct_string(), argument_types[i].get_value_list_text()), false, ERR_HANDLER_SCRIPT);
+				r_err.error = Callable::CallError::CALL_ERROR_INVALID_ARGUMENT;
+				r_err.argument = i;
+				r_err.expected = argument_types[i].kind == GDScriptDataType::BUILTIN ? argument_types[i].builtin_type : Variant::NIL;
+				call_depth--;
+				return GDScriptHelper::construct_empty_value_for_data_type(return_type);
+			}
 			if (!argument_types[i].has_type()) {
 				memnew_placement(&stack[i + FIXED_ADDRESSES_MAX], Variant(*p_args[i]));
 				continue;
@@ -1212,6 +1233,28 @@ Variant GDScriptFunction::call(GDScriptInstance *p_instance, const Variant **p_a
 				}
 #endif
 				ip += 5;
+			}
+			DISPATCH_OPCODE;
+
+			OPCODE(OPCODE_GET_KEYED_OPTIONAL) {
+				CHECK_SPACE(3);
+
+				GET_VARIANT_PTR(src, 0);
+				GET_VARIANT_PTR(index, 1);
+				GET_VARIANT_PTR(dst, 2);
+
+				// Optional chaining (`base?.[key]`, `base?.name`): a missing key, an out of bounds index or a `null` base give `null`.
+				bool valid = false;
+				Variant ret;
+				if (src->get_type() != Variant::NIL) {
+					ret = src->get(*index, &valid);
+				}
+				if (valid) {
+					*dst = ret;
+				} else {
+					*dst = Variant();
+				}
+				ip += 4;
 			}
 			DISPATCH_OPCODE;
 

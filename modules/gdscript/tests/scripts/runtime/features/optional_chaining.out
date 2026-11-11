@@ -1,0 +1,25 @@
+GDTEST_OK
+<null>
+<null>
+<null>
+do_something() called
+1
+1
+1
+<null>
+5
+5
+side_effect() called
+2
+1
+<null>
+<null>
+20
+<null>
+20
+Bob
+<null>
+guest
+<null>
+Bob
+1

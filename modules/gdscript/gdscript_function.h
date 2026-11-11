@@ -58,6 +58,11 @@ public:
 	bool is_key_of = false;
 	Vector<StringName> key_of_values;
 
+	// `List["foo", "bar", 1]`: the value must be one of these (`String` and `StringName` are considered equal).
+	// Can be set for any kind: a list with values of different types is a `Variant` (VARIANT kind).
+	bool is_value_list = false;
+	Vector<Variant> value_list_values;
+
 	enum Kind {
 		VARIANT, // Can be any type.
 		BUILTIN,
@@ -80,6 +85,8 @@ public:
 
 	_FORCE_INLINE_ bool is_struct_type() const { return is_struct && kind == BUILTIN && builtin_type == Variant::DICTIONARY; }
 	_FORCE_INLINE_ bool is_key_of_type() const { return is_key_of && kind == BUILTIN && builtin_type == Variant::STRING; }
+	bool has_value_list_value(const Variant &p_value) const;
+	String get_value_list_text() const;
 	// Checks the keys and values of `p_dictionary` against the struct shape. Returns an empty string on success, or the reason of the failure.
 	String validate_struct(const Dictionary &p_dictionary, const String &p_path = String()) const;
 	String to_string() const;
@@ -148,7 +155,9 @@ public:
 				struct_key_types == p_other.struct_key_types &&
 				struct_key_optional == p_other.struct_key_optional &&
 				is_key_of == p_other.is_key_of &&
-				key_of_values == p_other.key_of_values;
+				key_of_values == p_other.key_of_values &&
+				is_value_list == p_other.is_value_list &&
+				value_list_values == p_other.value_list_values;
 	}
 
 	bool operator!=(const GDScriptDataType &p_other) const {
@@ -168,6 +177,8 @@ public:
 		struct_key_optional = p_other.struct_key_optional;
 		is_key_of = p_other.is_key_of;
 		key_of_values = p_other.key_of_values;
+		is_value_list = p_other.is_value_list;
+		value_list_values = p_other.value_list_values;
 	}
 
 	GDScriptDataType(const GDScriptDataType &p_other) {
@@ -196,6 +207,7 @@ public:
 		OPCODE_GET_KEYED,
 		OPCODE_GET_KEYED_VALIDATED,
 		OPCODE_GET_INDEXED_VALIDATED,
+		OPCODE_GET_KEYED_OPTIONAL, // `base?.[key]`: `null` if the base is `null` or doesn't have the key (instead of an error).
 		OPCODE_SET_NAMED,
 		OPCODE_SET_NAMED_VALIDATED,
 		OPCODE_GET_NAMED,

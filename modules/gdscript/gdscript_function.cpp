@@ -79,7 +79,35 @@ String GDScriptDataType::validate_struct(const Dictionary &p_dictionary, const S
 	return String();
 }
 
+bool GDScriptDataType::has_value_list_value(const Variant &p_value) const {
+	const bool is_string = p_value.get_type() == Variant::STRING || p_value.get_type() == Variant::STRING_NAME;
+	for (const Variant &value : value_list_values) {
+		const bool value_is_string = value.get_type() == Variant::STRING || value.get_type() == Variant::STRING_NAME;
+		if (is_string != value_is_string || (!is_string && value.get_type() != p_value.get_type())) {
+			continue;
+		}
+		if (is_string ? (value.operator String() == p_value.operator String()) : (value == p_value)) {
+			return true;
+		}
+	}
+	return false;
+}
+
+String GDScriptDataType::get_value_list_text() const {
+	String text;
+	for (int i = 0; i < value_list_values.size(); i++) {
+		if (i > 0) {
+			text += ", ";
+		}
+		text += value_list_values[i].get_construct_string();
+	}
+	return text;
+}
+
 String GDScriptDataType::to_string() const {
+	if (is_value_list) {
+		return vformat("List[%s]", get_value_list_text());
+	}
 	switch (kind) {
 		case VARIANT:
 			return "Variant";
@@ -130,6 +158,19 @@ String GDScriptDataType::to_string() const {
 }
 
 bool GDScriptDataType::is_type(const Variant &p_variant, bool p_allow_implicit_conversion) const {
+	if (is_value_list && !has_value_list_value(p_variant)) {
+		// `List[...]`: an implicit conversion (like `1` for `List[1.0]`) must give one of the values.
+		if (!p_allow_implicit_conversion || kind != BUILTIN || p_variant.get_type() == builtin_type || !Variant::can_convert_strict(p_variant.get_type(), builtin_type)) {
+			return false;
+		}
+		Variant converted;
+		const Variant *argument = &p_variant;
+		Callable::CallError call_error;
+		Variant::construct(builtin_type, converted, &argument, 1, call_error);
+		if (call_error.error != Callable::CallError::CALL_OK || !has_value_list_value(converted)) {
+			return false;
+		}
+	}
 	switch (kind) {
 		case VARIANT: {
 			return true;

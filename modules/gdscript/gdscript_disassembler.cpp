@@ -301,6 +301,17 @@ void GDScriptFunction::disassemble(const Vector<String> &p_code_lines) const {
 
 				incr += 5;
 			} break;
+			case OPCODE_GET_KEYED_OPTIONAL: {
+				text += "get keyed optional ";
+				text += DADDR(3);
+				text += " = ";
+				text += DADDR(1);
+				text += "?.[";
+				text += DADDR(2);
+				text += "]";
+
+				incr += 4;
+			} break;
 			case OPCODE_SET_NAMED: {
 				text += "set_named ";
 				text += DADDR(1);

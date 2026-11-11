@@ -1,0 +1,2 @@
+GDTEST_PARSER_ERROR
+"Pick" expects the keys to pick as a second argument, like "Pick[StructType, { key }]".

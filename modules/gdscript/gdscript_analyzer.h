@@ -81,6 +81,12 @@ class GDScriptAnalyzer {
 	Error resolve_class_inheritance(GDScriptParser::ClassNode *p_class, const GDScriptParser::Node *p_source = nullptr);
 	Error resolve_class_inheritance(GDScriptParser::ClassNode *p_class, bool p_recursive);
 	GDScriptParser::DataType resolve_datatype(GDScriptParser::TypeNode *p_type);
+	// `List[...]`, `ListFrom[...]` and `NestedArray[...]`/`NestedDictionary[...]`.
+	bool reduce_value_list_value(GDScriptParser::ExpressionNode *p_value, Variant &r_value);
+	static GDScriptParser::DataType make_value_list_type(const Vector<Variant> &p_values);
+	GDScriptParser::DataType resolve_list_from_type(GDScriptParser::TypeNode *p_type);
+	static bool is_nested_container_type_name(const GDScriptParser::TypeNode *p_type);
+	static bool is_container_element_type_equal(const GDScriptParser::DataType &p_target, const GDScriptParser::DataType &p_source);
 	GDScriptParser::DataType make_struct_type_from_class(GDScriptParser::ClassNode *p_class, const GDScriptParser::Node *p_source, bool p_exported_only = false);
 	static bool is_struct_extractable_export(const GDScriptParser::VariableNode *p_variable);
 	GDScriptParser::DataType infer_struct_type_from_literal(GDScriptParser::DictionaryNode *p_dictionary);
@@ -132,6 +138,7 @@ class GDScriptAnalyzer {
 	void reduce_preload(GDScriptParser::PreloadNode *p_preload);
 	void reduce_self(GDScriptParser::SelfNode *p_self);
 	void reduce_subscript(GDScriptParser::SubscriptNode *p_subscript, bool p_can_be_pseudo_type = false);
+	static void weaken_optional_chain_type(GDScriptParser::ExpressionNode *p_expression);
 	void reduce_ternary_op(GDScriptParser::TernaryOpNode *p_ternary_op, bool p_is_root = false);
 	void reduce_type_test(GDScriptParser::TypeTestNode *p_type_test);
 	void reduce_unary_op(GDScriptParser::UnaryOpNode *p_unary_op);
@@ -172,6 +179,7 @@ class GDScriptAnalyzer {
 	void update_struct_literal(GDScriptParser::DictionaryNode *p_dictionary, const GDScriptParser::DataType &p_struct_type);
 	void update_literal_for_expected_type(GDScriptParser::ExpressionNode *p_expression, const GDScriptParser::DataType &p_expected_type);
 	static bool is_key_of_compatible(const GDScriptParser::DataType &p_target, const GDScriptParser::DataType &p_source, String *r_reason = nullptr);
+	static bool is_value_list_compatible(const GDScriptParser::DataType &p_target, const GDScriptParser::DataType &p_source, String *r_reason = nullptr);
 	static bool is_struct_compatible(const GDScriptParser::DataType &p_target, const GDScriptParser::DataType &p_source, String *r_reason = nullptr);
 	static bool is_struct_assignment_unsafe(const GDScriptParser::DataType &p_target, const GDScriptParser::DataType &p_source);
 	static bool is_struct_mismatch(const GDScriptParser::DataType &p_target, const GDScriptParser::DataType &p_source);

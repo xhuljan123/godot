@@ -746,6 +746,207 @@ GDScriptParser::DataType GDScriptAnalyzer::make_struct_type_from_class(GDScriptP
 	return result;
 }
 
+// A value of `List[...]`: a constant expression (`StringName` values become `String`).
+bool GDScriptAnalyzer::reduce_value_list_value(GDScriptParser::ExpressionNode *p_value, Variant &r_value) {
+	reduce_expression(p_value);
+	if (!p_value->is_constant) {
+		// Array and dictionary literals are never marked constant when reduced, so fold them here.
+		bool is_reduced = false;
+		constant_required_depth++;
+		const Variant value = make_expression_reduced_value(p_value, is_reduced);
+		constant_required_depth--;
+		if (!is_reduced) {
+			push_error(R"(The values of "List" must be constant expressions.)", p_value);
+			return false;
+		}
+		p_value->is_constant = true;
+		p_value->reduced_value = value;
+	}
+	Variant value = p_value->reduced_value;
+	if (value.get_type() == Variant::OBJECT) {
+		push_error(R"(Objects cannot be values of "List".)", p_value);
+		return false;
+	}
+	if (value.get_type() == Variant::STRING_NAME) {
+		value = value.operator String();
+	}
+	r_value = value;
+	return true;
+}
+
+// The type of `List[...]` with these values: the common built-in type of the values, or `Variant` if they differ.
+GDScriptParser::DataType GDScriptAnalyzer::make_value_list_type(const Vector<Variant> &p_values) {
+	GDScriptParser::DataType result;
+	result.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
+	result.is_value_list = true;
+	result.value_list_values = p_values;
+
+	bool same_type = !p_values.is_empty();
+	const Variant::Type common_type = p_values.is_empty() ? Variant::NIL : p_values[0].get_type();
+	for (const Variant &value : p_values) {
+		if (value.get_type() != common_type) {
+			same_type = false;
+			break;
+		}
+	}
+	if (same_type && common_type != Variant::NIL) {
+		result.kind = GDScriptParser::DataType::BUILTIN;
+		result.builtin_type = common_type;
+	} else {
+		result.kind = GDScriptParser::DataType::VARIANT;
+	}
+	return result;
+}
+
+// `ListFrom[Source]`: a `List[...]` with the names of an enum (`ListFrom[MyEnum]`), the keys of a struct type (`ListFrom[MyStruct]`,
+// including optional keys), or the keys of a constant dictionary (`ListFrom[MY_CONSTANT]`, also the elements of a constant array).
+// Returns an unset type (after reporting an error) on failure.
+GDScriptParser::DataType GDScriptAnalyzer::resolve_list_from_type(GDScriptParser::TypeNode *p_type) {
+	static constexpr const char *expected = R"("ListFrom" expects an enum, a struct type or a constant dictionary)";
+	GDScriptParser::TypeNode *argument = p_type->get_container_type_or_null(0);
+	if (argument == nullptr) {
+		return GDScriptParser::DataType(); // Error already reported by the parser.
+	}
+
+	Vector<Variant> values;
+	GDScriptParser::DataType source_type;
+	bool has_source_type = false;
+	String source_name;
+
+	const bool is_name = !argument->type_chain.is_empty() && argument->container_types.is_empty() && !argument->is_struct && argument->struct_modifier == GDScriptParser::TypeNode::STRUCT_MODIFIER_NONE && !argument->is_value_list && !argument->is_callable_signature && !argument->is_nested_container;
+	if (is_name) {
+		// A name (`MyEnum`, `MY_CONSTANT`, `Other.MyEnum`, `Other.MY_CONSTANT`): can be a constant value, not only a type.
+		GDScriptParser::IdentifierNode *identifier = argument->type_chain[0];
+		reduce_identifier(identifier, true);
+		GDScriptParser::DataType name_type = identifier->type_constraint;
+		bool is_constant = identifier->is_constant;
+		Variant value = identifier->reduced_value;
+		source_name = identifier->name;
+		for (uint32_t i = 1; i < argument->type_chain.size(); i++) {
+			if (!name_type.is_set() || name_type.kind == GDScriptParser::DataType::UNRESOLVED) {
+				break;
+			}
+			GDScriptParser::IdentifierNode *member = argument->type_chain[i];
+			GDScriptParser::DataType base = name_type;
+			reduce_identifier_from_base(member, &base);
+			source_name += "." + String(member->name);
+			name_type = member->type_constraint;
+			is_constant = member->is_constant;
+			value = member->reduced_value;
+			if (!name_type.is_set() || name_type.kind == GDScriptParser::DataType::UNRESOLVED) {
+				push_error(vformat(R"(Cannot find member "%s" in base "%s".)", member->name, type_from_metatype(base).to_string()), member);
+				return GDScriptParser::DataType();
+			}
+		}
+		if (!name_type.is_set() || name_type.kind == GDScriptParser::DataType::UNRESOLVED) {
+			return GDScriptParser::DataType(); // Error already reported.
+		}
+		if (name_type.is_meta_type) {
+			source_type = type_from_metatype(name_type);
+			has_source_type = true;
+		} else if (is_constant && value.get_type() == Variant::DICTIONARY) {
+			const Dictionary dictionary = value;
+			for (const KeyValue<Variant, Variant> &E : dictionary) {
+				values.push_back(E.key);
+			}
+		} else if (is_constant && value.get_type() == Variant::ARRAY) {
+			const Array array = value;
+			for (const Variant &element : array) {
+				values.push_back(element);
+			}
+		} else {
+			push_error(vformat(R"(%s, but "%s" is %s of type "%s".)", expected, source_name, is_constant ? "a constant" : "a value", name_type.to_string()), argument);
+			return GDScriptParser::DataType();
+		}
+	} else {
+		source_type = type_from_metatype(resolve_datatype(argument));
+		if (!source_type.is_set() || (source_type.is_variant() && !source_type.is_hard_type())) {
+			return GDScriptParser::DataType(); // Error already reported.
+		}
+		has_source_type = true;
+		source_name = source_type.to_string();
+	}
+
+	if (has_source_type) {
+		if (source_type.kind == GDScriptParser::DataType::ENUM) {
+			for (const KeyValue<StringName, int64_t> &E : source_type.enum_values) {
+				values.push_back(String(E.key));
+			}
+		} else if (source_type.is_struct_type()) {
+			for (const StringName &key : source_type.struct_keys) {
+				values.push_back(String(key));
+			}
+		} else if (source_type.is_value_list_type()) {
+			values = source_type.value_list_values;
+		} else if (source_type.is_key_of_type()) {
+			for (const StringName &key : source_type.key_of_values) {
+				values.push_back(String(key));
+			}
+		} else {
+			push_error(vformat(R"(%s, but got "%s".)", expected, source_type.to_string()), argument);
+			return GDScriptParser::DataType();
+		}
+	}
+
+	Vector<Variant> unique_values;
+	for (const Variant &value : values) {
+		if (value.get_type() == Variant::OBJECT) {
+			push_error(vformat(R"("ListFrom" cannot use "%s" because it contains objects.)", source_name), argument);
+			return GDScriptParser::DataType();
+		}
+		const Variant normalized = value.get_type() == Variant::STRING_NAME ? Variant(value.operator String()) : value;
+		if (!GDScriptParser::DataType::value_list_has(unique_values, normalized)) {
+			unique_values.push_back(normalized);
+		}
+	}
+	if (unique_values.is_empty()) {
+		push_error(vformat(R"("ListFrom" needs at least one value, but "%s" has none.)", source_name), argument);
+		return GDScriptParser::DataType();
+	}
+	return make_value_list_type(unique_values);
+}
+
+bool GDScriptAnalyzer::is_nested_container_type_name(const GDScriptParser::TypeNode *p_type) {
+	if (p_type == nullptr || p_type->type_chain.size() != 1) {
+		return false;
+	}
+	const StringName &name = p_type->type_chain[0]->name;
+	if (name != SNAME("NestedArray") && name != SNAME("NestedDictionary")) {
+		return false;
+	}
+	// Without brackets, a user class with the same name wins.
+	return p_type->is_nested_container || !ScriptServer::is_global_class(name);
+}
+
+// Container element types are invariant. With `NestedArray`/`NestedDictionary`, element types can be typed collections themselves,
+// so their own element types must match too (`Array[int]` and `Array[String]` elements are different).
+bool GDScriptAnalyzer::is_container_element_type_equal(const GDScriptParser::DataType &p_target, const GDScriptParser::DataType &p_source) {
+	if (p_target != p_source) {
+		return false;
+	}
+	if (p_target.kind != GDScriptParser::DataType::BUILTIN || p_source.kind != GDScriptParser::DataType::BUILTIN) {
+		return true;
+	}
+	if (p_target.builtin_type != Variant::ARRAY && p_target.builtin_type != Variant::DICTIONARY) {
+		return true;
+	}
+	if (!p_target.has_container_element_types() && !p_source.has_container_element_types()) {
+		return true;
+	}
+	const int count = MAX(p_target.get_container_element_type_count(), p_source.get_container_element_type_count());
+	for (int i = 0; i < count; i++) {
+		const GDScriptParser::DataType target_element = p_target.get_container_element_type_or_variant(i);
+		const GDScriptParser::DataType source_element = p_source.get_container_element_type_or_variant(i);
+		if (target_element.is_variant() != source_element.is_variant()) {
+			return false;
+		}
+		if (!is_container_element_type_equal(target_element, source_element)) {
+			return false;
+		}
+	}
+	return true;
+}
+
 GDScriptParser::DataType GDScriptAnalyzer::resolve_datatype(GDScriptParser::TypeNode *p_type) {
 	GDScriptParser::DataType bad_type;
 	bad_type.kind = GDScriptParser::DataType::VARIANT;
@@ -841,6 +1042,38 @@ GDScriptParser::DataType GDScriptAnalyzer::resolve_datatype(GDScriptParser::Type
 		return result;
 	}
 
+	if (p_type->is_value_list) {
+		// `List["foo", "bar", 1]`: only these (constant) values are accepted.
+		Vector<Variant> values;
+		for (GDScriptParser::ExpressionNode *value_node : p_type->value_list_values) {
+			Variant value;
+			if (!reduce_value_list_value(value_node, value)) {
+				continue; // Error already reported.
+			}
+			if (GDScriptParser::DataType::value_list_has(values, value)) {
+				push_error(vformat(R"(Value %s is already in the list.)", value.get_construct_string()), value_node);
+				continue;
+			}
+			values.push_back(value);
+		}
+		if (values.is_empty()) {
+			return bad_type; // Error already reported.
+		}
+		result = make_value_list_type(values);
+		p_type->resolved_type = result;
+		return result;
+	}
+
+	if (p_type->struct_modifier == GDScriptParser::TypeNode::STRUCT_MODIFIER_LIST_FROM) {
+		// `ListFrom[Source]`: a `List[...]` of the names of an enum, the keys of a struct type, or the keys of a constant dictionary.
+		result = resolve_list_from_type(p_type);
+		if (!result.is_set()) {
+			return bad_type; // Error already reported.
+		}
+		p_type->resolved_type = result;
+		return result;
+	}
+
 	if (p_type->struct_modifier != GDScriptParser::TypeNode::STRUCT_MODIFIER_NONE) {
 		GDScriptParser::TypeNode *argument = p_type->get_container_type_or_null(0);
 		if (argument == nullptr) {
@@ -849,6 +1082,54 @@ GDScriptParser::DataType GDScriptAnalyzer::resolve_datatype(GDScriptParser::Type
 		const GDScriptParser::DataType argument_type = type_from_metatype(resolve_datatype(argument));
 		if (!argument_type.is_set() || (argument_type.is_variant() && !argument_type.is_hard_type())) {
 			return bad_type; // Error already reported.
+		}
+
+		if (p_type->struct_modifier == GDScriptParser::TypeNode::STRUCT_MODIFIER_DICTIONARY_WITH_KEYS) {
+			// `DictionaryWithKeys[ListType, ValueType]`: a struct type with a required key (of type `ValueType`) for each value
+			// of the list, so dictionaries must have all of them. Like `Record<K, V>` in TypeScript.
+			Vector<Variant> keys;
+			if (argument_type.is_value_list_type()) {
+				keys = argument_type.value_list_values;
+			} else if (argument_type.is_key_of_type()) {
+				for (const StringName &key : argument_type.key_of_values) {
+					keys.push_back(String(key));
+				}
+			} else {
+				push_error(vformat(R"("DictionaryWithKeys" expects a list of keys (like "List["a", "b"]", "ListFrom[...]" or "KeyOf[...]") as first argument, but got "%s".)", argument_type.to_string()), argument);
+				return bad_type;
+			}
+			GDScriptParser::TypeNode *value_type_node = p_type->get_container_type_or_null(1);
+			if (value_type_node == nullptr) {
+				return bad_type; // Error already reported by the parser.
+			}
+			GDScriptParser::DataType value_type = type_from_metatype(resolve_datatype(value_type_node));
+			if (!value_type.is_set()) {
+				value_type = GDScriptParser::DataType::get_variant_type();
+			} else if (value_type.kind == GDScriptParser::DataType::BUILTIN && value_type.builtin_type == Variant::NIL) {
+				push_error(R"(The value type of "DictionaryWithKeys" cannot be "void" or "null".)", value_type_node);
+				value_type = GDScriptParser::DataType::get_variant_type();
+			}
+			value_type.is_constant = false;
+			value_type.is_read_only = false;
+			value_type.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
+
+			result.kind = GDScriptParser::DataType::BUILTIN;
+			result.builtin_type = Variant::DICTIONARY;
+			result.is_struct = true;
+			for (const Variant &key : keys) {
+				if (key.get_type() != Variant::STRING && key.get_type() != Variant::STRING_NAME) {
+					push_error(vformat(R"("DictionaryWithKeys" only supports string keys, but %s is "%s".)", key.get_construct_string(), Variant::get_type_name(key.get_type())), argument);
+					return bad_type;
+				}
+				result.add_struct_key(StringName(key.operator String()), value_type, false);
+			}
+			GDScriptParser::DataType keys_source = argument_type;
+			keys_source.is_constant = false;
+			keys_source.is_read_only = false;
+			result.dictionary_with_keys_source.push_back(keys_source);
+			result.dictionary_with_keys_source.push_back(value_type);
+			p_type->resolved_type = result;
+			return result;
 		}
 
 		if (p_type->struct_modifier == GDScriptParser::TypeNode::STRUCT_MODIFIER_KEY_OF) {
@@ -883,12 +1164,43 @@ GDScriptParser::DataType GDScriptAnalyzer::resolve_datatype(GDScriptParser::Type
 			variant_type.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
 			result = argument_type;
 			result.alias_name = StringName();
+			result.dictionary_with_keys_source.clear();
 			result.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
 			result.is_constant = false;
 			result.is_read_only = false;
 			result.struct_is_exact = false;
 			for (int i = 0; i < result.struct_key_types.size(); i++) {
 				result.struct_key_types.write[i] = variant_type;
+			}
+		} else if (p_type->struct_modifier == GDScriptParser::TypeNode::STRUCT_MODIFIER_PICK) {
+			// `Pick[StructType, { key, other }]`: the struct type with only the listed keys (like `Pick<T, K>` in TypeScript).
+			// The picked keys keep their type, optionality and default value.
+			if (!argument_type.is_struct_type()) {
+				push_error(vformat(R"("Pick" expects a struct type, but got "%s".)", argument_type.to_string()), argument);
+				return bad_type;
+			}
+			HashSet<StringName> picked;
+			for (const GDScriptParser::TypeNode::StructModifierKey &picked_key : p_type->struct_modifier_excluded_keys) {
+				if (argument_type.find_struct_key(picked_key.name) < 0) {
+					push_error(vformat(R"(Key "%s" does not exist in struct type "%s".)", picked_key.name, argument_type.to_string()), picked_key.key_node);
+					continue;
+				}
+				picked.insert(picked_key.name);
+			}
+			result = argument_type;
+			result.alias_name = StringName();
+			result.dictionary_with_keys_source.clear();
+			result.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
+			result.is_constant = false;
+			result.is_read_only = false;
+			result.clear_struct();
+			result.is_struct = true; // Even if no key is picked (`Struct[{}]`).
+			result.struct_is_exact = argument_type.struct_is_exact;
+			for (int i = 0; i < argument_type.struct_keys.size(); i++) {
+				if (!picked.has(argument_type.struct_keys[i])) {
+					continue;
+				}
+				result.add_struct_key(argument_type.struct_keys[i], argument_type.struct_key_types[i], argument_type.struct_key_optional[i], argument_type.struct_key_has_default[i], argument_type.struct_key_defaults[i]);
 			}
 		} else if (p_type->struct_modifier == GDScriptParser::TypeNode::STRUCT_MODIFIER_OMIT) {
 			// `Omit[StructType, { key, other }]`: the struct type without the listed keys (like `Omit<T, K>` in TypeScript).
@@ -907,6 +1219,7 @@ GDScriptParser::DataType GDScriptAnalyzer::resolve_datatype(GDScriptParser::Type
 			}
 			result = argument_type;
 			result.alias_name = StringName();
+			result.dictionary_with_keys_source.clear();
 			result.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
 			result.is_constant = false;
 			result.is_read_only = false;
@@ -931,6 +1244,7 @@ GDScriptParser::DataType GDScriptAnalyzer::resolve_datatype(GDScriptParser::Type
 			}
 			result = argument_type;
 			result.alias_name = StringName();
+			result.dictionary_with_keys_source.clear();
 			result.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
 			result.is_constant = false;
 			result.is_read_only = false;
@@ -1025,9 +1339,10 @@ GDScriptParser::DataType GDScriptAnalyzer::resolve_datatype(GDScriptParser::Type
 				return bad_type;
 			}
 			result.kind = GDScriptParser::DataType::VARIANT;
-		} else if (GDScriptParser::get_builtin_type(first) < Variant::VARIANT_MAX) {
-			// Built-in types.
-			const Variant::Type builtin_type = GDScriptParser::get_builtin_type(first);
+		} else if (GDScriptParser::get_builtin_type(first) < Variant::VARIANT_MAX || is_nested_container_type_name(p_type)) {
+			// Built-in types. `NestedArray` and `NestedDictionary` are `Array` and `Dictionary` that allow nested typed collections.
+			const bool is_nested_container = is_nested_container_type_name(p_type);
+			const Variant::Type builtin_type = is_nested_container ? (first == SNAME("NestedArray") ? Variant::ARRAY : Variant::DICTIONARY) : GDScriptParser::get_builtin_type(first);
 
 			if (p_type->type_chain.size() == 2) {
 				// May be nested enum.
@@ -1046,6 +1361,7 @@ GDScriptParser::DataType GDScriptAnalyzer::resolve_datatype(GDScriptParser::Type
 
 			result.kind = GDScriptParser::DataType::BUILTIN;
 			result.builtin_type = builtin_type;
+			result.is_nested_container = is_nested_container;
 
 			if (builtin_type == Variant::ARRAY) {
 				GDScriptParser::DataType container_type = type_from_metatype(resolve_datatype(p_type->get_container_type_or_null(0)));
@@ -1208,7 +1524,27 @@ GDScriptParser::DataType GDScriptAnalyzer::resolve_datatype(GDScriptParser::Type
 		return bad_type;
 	}
 
-	if (p_type->type_chain.size() > 1) {
+	if (p_type->type_chain.size() > 1 && type_from_metatype(result).is_struct_type()) {
+		// `Foo.key`: the type of a key of a struct type (like `Foo["key"]` in TypeScript). Can be chained (`Foo.key.nested`).
+		GDScriptParser::DataType key_type = type_from_metatype(result);
+		for (uint32_t i = 1; i < p_type->type_chain.size(); i++) {
+			const StringName key = p_type->type_chain[i]->name;
+			if (!key_type.is_struct_type()) {
+				push_error(vformat(R"(Cannot get the type of key "%s" because "%s" is not a struct type.)", key, key_type.to_string()), p_type->type_chain[i]);
+				return bad_type;
+			}
+			const int key_index = key_type.find_struct_key(key);
+			if (key_index < 0) {
+				push_error(vformat(R"(Key "%s" does not exist in struct type "%s".)", key, key_type.to_string()), p_type->type_chain[i]);
+				return bad_type;
+			}
+			key_type = key_type.struct_key_types[key_index];
+		}
+		key_type.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
+		key_type.is_constant = false;
+		key_type.is_read_only = false;
+		result = key_type;
+	} else if (p_type->type_chain.size() > 1) {
 		if (result.kind == GDScriptParser::DataType::CLASS) {
 			for (uint32_t i = 1; i < p_type->type_chain.size(); i++) {
 				GDScriptParser::DataType base = result;
@@ -2529,8 +2865,8 @@ void GDScriptAnalyzer::resolve_assignable(GDScriptParser::AssignableNode *p_assi
 				// reassigned with a callable of any signature. Use `Callable[...]` to opt in to signature checks.
 				type.clear_callable_signature();
 			}
-		} else if (!specified_type.is_variant()) {
-			if (initializer_type.is_variant() || !initializer_type.is_hard_type()) {
+		} else if (!specified_type.is_variant() || specified_type.is_value_list_type()) {
+			if ((initializer_type.is_variant() && !(initializer_type.is_value_list_type() && specified_type.is_value_list_type())) || !initializer_type.is_hard_type()) {
 				mark_node_unsafe(p_assignable->initializer);
 				p_assignable->use_conversion_assign = true;
 				if (!initializer_type.is_variant() && !is_type_compatible(specified_type, initializer_type, true, p_assignable->initializer)) {
@@ -2954,8 +3290,8 @@ void GDScriptAnalyzer::resolve_return(GDScriptParser::ReturnNode *p_return) {
 		}
 	}
 
-	if (has_expected_type && !expected_type.is_variant() && expected_type.is_hard_type()) {
-		if (result.is_variant() || !result.is_hard_type()) {
+	if (has_expected_type && (!expected_type.is_variant() || expected_type.is_value_list_type()) && expected_type.is_hard_type()) {
+		if ((result.is_variant() && !(result.is_value_list_type() && expected_type.is_value_list_type())) || !result.is_hard_type()) {
 			p_return->use_conversion = true;
 			mark_node_unsafe(p_return);
 		} else if (!is_type_compatible(expected_type, result, true, p_return)) {
@@ -3081,6 +3417,10 @@ void GDScriptAnalyzer::reduce_expression(GDScriptParser::ExpressionNode *p_expre
 			ERR_FAIL_MSG("Reaching unreachable case");
 	}
 
+	if (p_expression->is_optional_chain_root) {
+		weaken_optional_chain_type(p_expression);
+	}
+
 	// Type aliases only exist at compile time, they can't be used as values.
 	const GDScriptParser::IdentifierNode *alias_identifier = nullptr;
 	if (p_expression->type == GDScriptParser::Node::IDENTIFIER) {
@@ -3128,6 +3468,22 @@ static bool enum_has_value(const GDScriptParser::DataType p_type, int64_t p_valu
 #endif // DEBUG_ENABLED
 
 void GDScriptAnalyzer::update_const_expression_builtin_type(GDScriptParser::ExpressionNode *p_expression, const GDScriptParser::DataType &p_type, const char *p_usage, bool p_is_cast) {
+	if (p_type.is_value_list_type() && p_expression->is_constant) {
+		// `List[...]`: the constant must be one of the accepted values. Checked before the early return below, since
+		// a plain value of the same type compares equal to the list type.
+		const Variant &value = p_expression->reduced_value;
+		if (!p_type.has_value_list_value(value)) {
+			push_error(vformat(R"(Cannot %s %s as "%s". Expected one of: %s.)", p_usage, value.get_construct_string(), p_type.to_string(), p_type.get_value_list_text()), p_expression);
+			p_expression->type_constraint = p_type; // Avoid a second error.
+			return;
+		}
+		if (value.get_type() == Variant::STRING_NAME) {
+			p_expression->reduced_value = value.operator String(); // `&"foo"` becomes a `String`.
+		}
+		p_expression->type_constraint = p_type;
+		return;
+	}
+
 	if (p_type.is_key_of_type() && p_expression->is_constant && (p_expression->reduced_value.get_type() == Variant::STRING || p_expression->reduced_value.get_type() == Variant::STRING_NAME)) {
 		// `KeyOf[StructType]`: the constant must be one of the struct keys. Checked before the early return
 		// below, since a plain `String` compares equal to a `KeyOf` type.
@@ -3195,12 +3551,15 @@ void GDScriptAnalyzer::update_const_expression_builtin_type(GDScriptParser::Expr
 // When an array literal is stored (or passed as function argument) to a typed context, we then assume the array is typed.
 // This function determines which type is that (if any).
 void GDScriptAnalyzer::update_array_literal_element_type(GDScriptParser::ArrayNode *p_array, const GDScriptParser::DataType &p_element_type) {
-	GDScriptParser::DataType expected_type = p_element_type;
-	expected_type.container_element_types.clear(); // Nested types (like `Array[Array[int]]`) are not currently supported.
+	// Element types only have their own element types with `NestedArray[...]`/`NestedDictionary[...]` (like `NestedArray[Array[int]]`).
+	// Nested literals are typed recursively.
+	const GDScriptParser::DataType &expected_type = p_element_type;
 
 	for (GDScriptParser::ExpressionNode *element_node : p_array->elements) {
 		if (element_node->type == GDScriptParser::Node::DICTIONARY && expected_type.is_struct_type()) {
 			update_struct_literal(static_cast<GDScriptParser::DictionaryNode *>(element_node), expected_type);
+		} else if ((element_node->type == GDScriptParser::Node::ARRAY || element_node->type == GDScriptParser::Node::DICTIONARY) && expected_type.has_container_element_types()) {
+			update_literal_for_expected_type(element_node, expected_type);
 		}
 		if (element_node->is_constant) {
 			update_const_expression_builtin_type(element_node, expected_type, "include");
@@ -3228,13 +3587,23 @@ void GDScriptAnalyzer::update_array_literal_element_type(GDScriptParser::ArrayNo
 // When a dictionary literal is stored (or passed as function argument) to a typed context, we then assume the dictionary is typed.
 // This function determines which type is that (if any).
 void GDScriptAnalyzer::update_dictionary_literal_element_type(GDScriptParser::DictionaryNode *p_dictionary, const GDScriptParser::DataType &p_key_element_type, const GDScriptParser::DataType &p_value_element_type) {
-	GDScriptParser::DataType expected_key_type = p_key_element_type;
-	GDScriptParser::DataType expected_value_type = p_value_element_type;
-	expected_key_type.container_element_types.clear(); // Nested types (like `Dictionary[String, Array[int]]`) are not currently supported.
-	expected_value_type.container_element_types.clear();
+	// Element types only have their own element types with `NestedDictionary[...]` (like `NestedDictionary[String, Array[int]]`).
+	// Nested literals are typed recursively.
+	const GDScriptParser::DataType &expected_key_type = p_key_element_type;
+	const GDScriptParser::DataType &expected_value_type = p_value_element_type;
 
 	for (uint32_t i = 0; i < p_dictionary->elements.size(); i++) {
 		GDScriptParser::ExpressionNode *key_element_node = p_dictionary->elements[i].key;
+		if (key_element_node->type == GDScriptParser::Node::IDENTIFIER && expected_key_type.is_value_list_type() && p_dictionary->style == GDScriptParser::DictionaryNode::PYTHON_DICT) {
+			// `Dictionary[List["foo", "bar"], int]`: an unknown name used as key (`{ foo: 1 }`) is the key name, like in a struct literal.
+			GDScriptParser::IdentifierNode *identifier = static_cast<GDScriptParser::IdentifierNode *>(key_element_node);
+			if (pending_struct_key_errors.has(identifier) && expected_key_type.has_value_list_value(String(identifier->name))) {
+				pending_struct_key_errors.erase(identifier);
+				identifier->is_constant = true;
+				identifier->reduced_value = String(identifier->name);
+				identifier->type_constraint = expected_key_type;
+			}
+		}
 		if (key_element_node->is_constant) {
 			update_const_expression_builtin_type(key_element_node, expected_key_type, "include");
 		}
@@ -3253,6 +3622,8 @@ void GDScriptAnalyzer::update_dictionary_literal_element_type(GDScriptParser::Di
 		GDScriptParser::ExpressionNode *value_element_node = p_dictionary->elements[i].value;
 		if (value_element_node->type == GDScriptParser::Node::DICTIONARY && expected_value_type.is_struct_type()) {
 			update_struct_literal(static_cast<GDScriptParser::DictionaryNode *>(value_element_node), expected_value_type);
+		} else if ((value_element_node->type == GDScriptParser::Node::ARRAY || value_element_node->type == GDScriptParser::Node::DICTIONARY) && expected_value_type.has_container_element_types()) {
+			update_literal_for_expected_type(value_element_node, expected_value_type);
 		}
 		if (value_element_node->is_constant) {
 			update_const_expression_builtin_type(value_element_node, expected_value_type, "include");
@@ -3349,7 +3720,7 @@ void GDScriptAnalyzer::update_struct_literal(GDScriptParser::DictionaryNode *p_d
 
 		// Nested literals (structs, typed arrays and dictionaries).
 		update_literal_for_expected_type(value_node, expected_type);
-		if (value_node->is_constant && expected_type.is_hard_type() && is_type_compatible(expected_type, value_node->type_constraint, true)) {
+		if (value_node->is_constant && expected_type.is_hard_type() && (expected_type.is_value_list_type() || expected_type.is_key_of_type() || is_type_compatible(expected_type, value_node->type_constraint, true))) {
 			GDScriptParser::DataType before = value_node->type_constraint;
 			update_const_expression_builtin_type(value_node, expected_type, "assign");
 			changed_constant_value = changed_constant_value || before.builtin_type != value_node->type_constraint.builtin_type;
@@ -3841,7 +4212,7 @@ GDScriptParser::DataType GDScriptAnalyzer::reduce_parse_optional_call(GDScriptPa
 		// Literals are typed from the first argument, like in an assignment (`parseOptional(ids, [])` with `ids: Array[int]`).
 		update_literal_for_expected_type(default_value, value_type);
 		const GDScriptParser::DataType &initial_default_type = default_value->type_constraint;
-		if (default_value->is_constant && (value_type.is_key_of_type() || (value_type.kind == GDScriptParser::DataType::BUILTIN && value_type.builtin_type == Variant::FLOAT && initial_default_type.kind == GDScriptParser::DataType::BUILTIN && initial_default_type.builtin_type == Variant::INT))) {
+		if (default_value->is_constant && (value_type.is_key_of_type() || value_type.is_value_list_type() || (value_type.kind == GDScriptParser::DataType::BUILTIN && value_type.builtin_type == Variant::FLOAT && initial_default_type.kind == GDScriptParser::DataType::BUILTIN && initial_default_type.builtin_type == Variant::INT))) {
 			update_const_expression_builtin_type(default_value, value_type, "pass");
 		}
 		const GDScriptParser::DataType default_type = default_value->type_constraint;
@@ -4063,9 +4434,30 @@ bool GDScriptAnalyzer::is_key_of_compatible(const GDScriptParser::DataType &p_ta
 	return true;
 }
 
+bool GDScriptAnalyzer::is_value_list_compatible(const GDScriptParser::DataType &p_target, const GDScriptParser::DataType &p_source, String *r_reason) {
+	for (const Variant &value : p_source.value_list_values) {
+		if (!p_target.has_value_list_value(value)) {
+			if (r_reason) {
+				*r_reason = vformat(R"(Value %s is not one of: %s.)", value.get_construct_string(), p_target.get_value_list_text());
+			}
+			return false;
+		}
+	}
+	return true;
+}
+
 bool GDScriptAnalyzer::is_struct_compatible(const GDScriptParser::DataType &p_target, const GDScriptParser::DataType &p_source, String *r_reason) {
 	if (p_target.is_typed_callable_type() && p_source.is_typed_callable_type()) {
 		return is_callable_signature_compatible(p_target, p_source, r_reason);
+	}
+	if (p_target.is_value_list_type()) {
+		if (p_source.is_value_list_type()) {
+			return is_value_list_compatible(p_target, p_source, r_reason);
+		}
+		if (r_reason) {
+			*r_reason = vformat(R"(Expected one of: %s.)", p_target.get_value_list_text());
+		}
+		return false;
 	}
 	if (p_target.is_key_of_type() && p_source.is_key_of_type()) {
 		return is_key_of_compatible(p_target, p_source, r_reason);
@@ -4127,6 +4519,10 @@ bool GDScriptAnalyzer::is_struct_assignment_unsafe(const GDScriptParser::DataTyp
 // Two struct types (or two callable signatures, or two `KeyOf` types) that are not compatible must not be treated
 // as a "maybe compatible" downcast. `is_struct_compatible()` gives the reason for all of them.
 bool GDScriptAnalyzer::is_struct_mismatch(const GDScriptParser::DataType &p_target, const GDScriptParser::DataType &p_source) {
+	if (p_target.is_value_list_type() && (p_source.is_value_list_type() || (p_source.is_set() && p_source.kind != GDScriptParser::DataType::VARIANT && !p_target.can_value_list_have_type(p_source)))) {
+		// `List[...]`: another list with other values, or a type that none of the values has.
+		return true;
+	}
 	return (p_target.is_struct_type() && p_source.is_struct_type()) || (p_target.is_typed_callable_type() && p_source.is_typed_callable_type()) || (p_target.is_key_of_type() && p_source.is_key_of_type());
 }
 
@@ -4348,7 +4744,7 @@ void GDScriptAnalyzer::reduce_assignment(GDScriptParser::AssignmentNode *p_assig
 
 	GDScriptParser::DataType assigned_value_type = p_assignment->assigned_value->type_constraint;
 
-	bool assignee_is_variant = assignee_type.is_variant();
+	bool assignee_is_variant = assignee_type.is_variant() && !assignee_type.is_value_list_type(); // A mixed `List[...]` is checked.
 	bool assignee_is_hard = assignee_type.is_hard_type();
 	bool assigned_is_variant = assigned_value_type.is_variant();
 	bool assigned_is_hard = assigned_value_type.is_hard_type();
@@ -4392,7 +4788,7 @@ void GDScriptAnalyzer::reduce_assignment(GDScriptParser::AssignmentNode *p_assig
 			p_assignment->use_conversion_assign = true;
 			downgrades_assigned = downgrades_assigned || (!assigned_is_variant && !is_type_compatible(assignee_type, op_type, true, p_assignment->assigned_value));
 		} else if (compatible) {
-			if (op_type.is_variant()) {
+			if (op_type.is_variant() && !(op_type.is_value_list_type() && assignee_type.is_value_list_type())) {
 				// non-variant assignee and variant result
 				mark_node_unsafe(p_assignment);
 				if (assignee_is_hard) {
@@ -6365,7 +6761,9 @@ void GDScriptAnalyzer::reduce_subscript(GDScriptParser::SubscriptNode *p_subscri
 				result_type = get_struct_key_read_type(base_type, key_index);
 				p_subscript->attribute->type_constraint = result_type;
 			} else {
-				push_error(vformat(R"(Key "%s" does not exist in struct type "%s".)", p_subscript->attribute->name, base_type.to_string()), p_subscript->attribute);
+				if (!p_subscript->is_optional) { // `value?.key` gives `null` for an unknown key.
+					push_error(vformat(R"(Key "%s" does not exist in struct type "%s".)", p_subscript->attribute->name, base_type.to_string()), p_subscript->attribute);
+				}
 				valid = true; // Avoid a second error.
 				result_type.kind = GDScriptParser::DataType::VARIANT;
 			}
@@ -6420,6 +6818,12 @@ void GDScriptAnalyzer::reduce_subscript(GDScriptParser::SubscriptNode *p_subscri
 			}
 		}
 
+		if (!valid && p_subscript->is_optional && !base_type.is_meta_type) {
+			// `value?.member`: an unknown member (or dictionary key) gives `null` at runtime.
+			valid = true;
+			result_type = GDScriptParser::DataType();
+			result_type.kind = GDScriptParser::DataType::VARIANT;
+		}
 		if (!valid) {
 			GDScriptParser::DataType attr_type = p_subscript->attribute->type_constraint;
 			if (!p_can_be_pseudo_type && (attr_type.is_pseudo_type || result_type.is_pseudo_type)) {
@@ -6449,6 +6853,11 @@ void GDScriptAnalyzer::reduce_subscript(GDScriptParser::SubscriptNode *p_subscri
 				p_subscript->is_constant = true;
 				p_subscript->reduced_value = default_value;
 				result_type = get_struct_key_read_type(constant_base_type, constant_key_index);
+			} else if (!valid && p_subscript->is_optional) {
+				// `CONSTANT?.[index]`: a missing key or index gives `null`.
+				p_subscript->is_constant = true;
+				p_subscript->reduced_value = Variant();
+				result_type = type_from_variant(Variant(), p_subscript);
 			} else if (!valid) {
 				push_error(vformat(R"(Cannot get index "%s" from "%s".)", p_subscript->index->reduced_value, p_subscript->base->reduced_value), p_subscript->index);
 				result_type.kind = GDScriptParser::DataType::VARIANT;
@@ -6471,7 +6880,9 @@ void GDScriptAnalyzer::reduce_subscript(GDScriptParser::SubscriptNode *p_subscri
 				if (key_index >= 0) {
 					result_type = get_struct_key_read_type(base_type, key_index);
 				} else {
-					push_error(vformat(R"(Key "%s" does not exist in struct type "%s".)", key, base_type.to_string()), p_subscript->index);
+					if (!p_subscript->is_optional) { // `value?.["key"]` gives `null` for an unknown key.
+						push_error(vformat(R"(Key "%s" does not exist in struct type "%s".)", key, base_type.to_string()), p_subscript->index);
+					}
 					result_type.kind = GDScriptParser::DataType::VARIANT;
 				}
 			} else if (base_type.is_struct_type() && index_type.is_hard_type() && index_type.is_key_of_type()) {
@@ -6717,10 +7128,23 @@ void GDScriptAnalyzer::reduce_subscript(GDScriptParser::SubscriptNode *p_subscri
 	}
 
 	p_subscript->type_constraint = result_type;
+	if (p_subscript->is_optional_chain_root) {
+		weaken_optional_chain_type(p_subscript);
+	}
 
 #ifdef DEBUG_ENABLED
 	warn_confusable_temporary_modification(p_subscript);
 #endif // DEBUG_ENABLED
+}
+
+// An optional chain (`a?.b`, `a?.[key]`) can give `null`, so a built-in result type is "weak": still known for completion,
+// but checked at runtime when assigned to a typed variable. Objects and `Variant` can hold `null`, so they keep their type.
+void GDScriptAnalyzer::weaken_optional_chain_type(GDScriptParser::ExpressionNode *p_expression) {
+	GDScriptParser::DataType &type = p_expression->type_constraint;
+	if (p_expression->is_constant || !type.is_set() || !type.is_hard_type() || type.kind != GDScriptParser::DataType::BUILTIN || type.builtin_type == Variant::NIL) {
+		return;
+	}
+	type.type_source = GDScriptParser::DataType::INFERRED;
 }
 
 void GDScriptAnalyzer::reduce_ternary_op(GDScriptParser::TernaryOpNode *p_ternary_op, bool p_is_root) {
@@ -6752,7 +7176,16 @@ void GDScriptAnalyzer::reduce_ternary_op(GDScriptParser::TernaryOpNode *p_ternar
 		false_type.kind = GDScriptParser::DataType::VARIANT;
 	}
 
-	if (true_type.is_variant() || false_type.is_variant()) {
+	if (true_type.is_value_list_type() && false_type.is_value_list_type()) {
+		// Two `List[...]` types: the values of both.
+		Vector<Variant> values = true_type.value_list_values;
+		for (const Variant &value : false_type.value_list_values) {
+			if (!GDScriptParser::DataType::value_list_has(values, value)) {
+				values.push_back(value);
+			}
+		}
+		result = make_value_list_type(values);
+	} else if (true_type.is_variant() || false_type.is_variant()) {
 		result.kind = GDScriptParser::DataType::VARIANT;
 	} else if (true_type.kind == GDScriptParser::DataType::BUILTIN && false_type.kind == GDScriptParser::DataType::BUILTIN && true_type.builtin_type == Variant::CALLABLE && false_type.builtin_type == Variant::CALLABLE && !true_type.is_meta_type && !false_type.is_meta_type) {
 		// Two callables: the result keeps a signature only when both sides have the same one.
@@ -6811,6 +7244,18 @@ void GDScriptAnalyzer::reduce_type_test(GDScriptParser::TypeTestNode *p_type_tes
 	if (test_type.is_key_of_type()) {
 		push_error(R"*("KeyOf" types cannot be used with the "is" operator. Test for "String" and use "in" with the accepted keys instead.)*", p_type_test->test_type);
 		return;
+	}
+
+	if (test_type.is_value_list_type()) {
+		push_error(R"*("List" types cannot be used with the "is" operator. Use "in" with the accepted values instead.)*", p_type_test->test_type);
+		return;
+	}
+
+	for (int i = 0; i < test_type.get_container_element_type_count(); i++) {
+		if (test_type.get_container_element_type(i).has_container_element_types()) {
+			push_error(R"*(Nested typed collections cannot be used with the "is" operator, since only the outer element types are known at runtime.)*", p_type_test->test_type);
+			return;
+		}
 	}
 
 	if (test_type.is_typed_callable_type()) {
@@ -7719,10 +8164,10 @@ void GDScriptAnalyzer::validate_call_arg(const List<GDScriptParser::DataType> &p
 		}
 		GDScriptParser::DataType arg_type = p_call->arguments[i]->type_constraint;
 
-		if (arg_type.is_variant() || !arg_type.is_hard_type()) {
+		if ((arg_type.is_variant() && !(arg_type.is_value_list_type() && par_type.is_value_list_type())) || !arg_type.is_hard_type()) {
 #ifdef DEBUG_ENABLED
 			// Argument can be anything, so this is unsafe (unless the parameter is a hard variant).
-			if (!(par_type.is_hard_type() && par_type.is_variant())) {
+			if (!(par_type.is_hard_type() && par_type.is_variant() && !par_type.is_value_list_type())) {
 				mark_node_unsafe(p_call->arguments[i]);
 				parser->push_warning(p_call->arguments[i], GDScriptWarning::UNSAFE_CALL_ARGUMENT, itos(i + 1), "function", p_call->function_name, par_type.to_string(), arg_type.to_string_strict());
 			}
@@ -7993,6 +8438,12 @@ bool GDScriptAnalyzer::check_type_compatibility(const GDScriptParser::DataType &
 	ERR_FAIL_COND_V_MSG(!p_target.is_set(), true, "Parser bug (please report): Trying to check compatibility of unset target type");
 	ERR_FAIL_COND_V_MSG(!p_source.is_set(), true, "Parser bug (please report): Trying to check compatibility of unset value type");
 
+	if (p_target.is_value_list_type() && p_source.kind != GDScriptParser::DataType::VARIANT) {
+		// `List[...]` only accepts the values of another list that are all valid here. Constants are checked by
+		// `update_const_expression_builtin_type()`. Other values of a type of the list are a "maybe compatible" downcast (unsafe).
+		return p_source.is_value_list_type() && is_value_list_compatible(p_target, p_source);
+	}
+
 	if (p_target.kind == GDScriptParser::DataType::VARIANT) {
 		// Variant can receive anything.
 		return true;
@@ -8015,7 +8466,7 @@ bool GDScriptAnalyzer::check_type_compatibility(const GDScriptParser::DataType &
 		if (valid && p_target.builtin_type == Variant::ARRAY && p_source.builtin_type == Variant::ARRAY) {
 			// Check the element type.
 			if (p_target.has_container_element_type(0) && p_source.has_container_element_type(0)) {
-				valid = p_target.get_container_element_type(0) == p_source.get_container_element_type(0);
+				valid = is_container_element_type_equal(p_target.get_container_element_type(0), p_source.get_container_element_type(0));
 				if (valid && is_struct_mismatch(p_target.get_container_element_type(0), p_source.get_container_element_type(0))) {
 					// Containers are invariant, so struct element types must match both ways.
 					valid = is_struct_compatible(p_target.get_container_element_type(0), p_source.get_container_element_type(0)) && is_struct_compatible(p_source.get_container_element_type(0), p_target.get_container_element_type(0));
@@ -8025,10 +8476,14 @@ bool GDScriptAnalyzer::check_type_compatibility(const GDScriptParser::DataType &
 		if (valid && p_target.builtin_type == Variant::DICTIONARY && p_source.builtin_type == Variant::DICTIONARY) {
 			// Check the element types.
 			if (p_target.has_container_element_type(0) && p_source.has_container_element_type(0)) {
-				valid = p_target.get_container_element_type(0) == p_source.get_container_element_type(0);
+				valid = is_container_element_type_equal(p_target.get_container_element_type(0), p_source.get_container_element_type(0));
+				if (valid && p_target.get_container_element_type(0).is_value_list_type() && is_struct_mismatch(p_target.get_container_element_type(0), p_source.get_container_element_type(0))) {
+					// `Dictionary[List[...], ...]`: the accepted keys must match both ways.
+					valid = is_struct_compatible(p_target.get_container_element_type(0), p_source.get_container_element_type(0)) && is_struct_compatible(p_source.get_container_element_type(0), p_target.get_container_element_type(0));
+				}
 			}
 			if (valid && p_target.has_container_element_type(1) && p_source.has_container_element_type(1)) {
-				valid = p_target.get_container_element_type(1) == p_source.get_container_element_type(1);
+				valid = is_container_element_type_equal(p_target.get_container_element_type(1), p_source.get_container_element_type(1));
 				if (valid && is_struct_mismatch(p_target.get_container_element_type(1), p_source.get_container_element_type(1))) {
 					valid = is_struct_compatible(p_target.get_container_element_type(1), p_source.get_container_element_type(1)) && is_struct_compatible(p_source.get_container_element_type(1), p_target.get_container_element_type(1));
 				}

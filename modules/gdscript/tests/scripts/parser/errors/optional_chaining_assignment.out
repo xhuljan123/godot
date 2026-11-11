@@ -1,0 +1,2 @@
+GDTEST_PARSER_ERROR
+Optional chaining ("?.") cannot be used in an assignment target.

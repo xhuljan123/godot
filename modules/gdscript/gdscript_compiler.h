@@ -82,6 +82,11 @@ class GDScriptCompiler {
 		List<HashMap<StringName, GDScriptCodeGenerator::Address>> locals_stack;
 		bool is_static = false;
 
+		// Optional chaining (`a?.b.c()`): the root of the chain being compiled, and the number of `if` blocks
+		// opened by its optional links (closed when the whole chain was compiled).
+		const GDScriptParser::ExpressionNode *optional_chain_root = nullptr;
+		int optional_chain_open_ifs = 0;
+
 		GDScriptCodeGenerator::Address add_local(const StringName &p_name, const GDScriptDataType &p_type) {
 			uint32_t addr = generator->add_local(p_name, p_type);
 			locals[p_name] = GDScriptCodeGenerator::Address(GDScriptCodeGenerator::Address::LOCAL_VARIABLE, addr, p_type);
@@ -150,6 +155,8 @@ class GDScriptCompiler {
 	GDScriptDataType _gdtype_from_datatype(const GDScriptParser::DataType &p_datatype, GDScript *p_owner, bool p_handle_metatype = true);
 
 	GDScriptCodeGenerator::Address _parse_expression(CodeGen &codegen, Error &r_error, const GDScriptParser::ExpressionNode *p_expression, bool p_root = false, bool p_initializer = false);
+	GDScriptCodeGenerator::Address _parse_optional_chain(CodeGen &codegen, Error &r_error, const GDScriptParser::ExpressionNode *p_expression, bool p_root, bool p_initializer);
+	void _write_optional_chain_check(CodeGen &codegen, const GDScriptCodeGenerator::Address &p_base);
 	void _write_struct_key_get(CodeGen &codegen, const GDScriptCodeGenerator::Address &p_target, const GDScriptCodeGenerator::Address &p_base, const GDScriptParser::DataType &p_struct_type, int p_key_index);
 	GDScriptCodeGenerator::Address _parse_match_pattern(CodeGen &codegen, Error &r_error, const GDScriptParser::PatternNode *p_pattern, const GDScriptCodeGenerator::Address &p_value_addr, const GDScriptCodeGenerator::Address &p_type_addr, const GDScriptCodeGenerator::Address &p_previous_test, bool p_is_first, bool p_is_nested);
 	List<GDScriptCodeGenerator::Address> _add_block_locals(CodeGen &codegen, const GDScriptParser::SuiteNode *p_block);

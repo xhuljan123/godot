@@ -218,6 +218,11 @@ GDScriptDataType GDScriptCompiler::_gdtype_from_datatype(const GDScriptParser::D
 		result.key_of_values = p_datatype.key_of_values;
 	}
 
+	if (p_datatype.is_value_list_type() && (result.kind == GDScriptDataType::BUILTIN || result.kind == GDScriptDataType::VARIANT)) {
+		result.is_value_list = true;
+		result.value_list_values = p_datatype.value_list_values;
+	}
+
 	return result;
 }
 
@@ -296,9 +301,63 @@ void GDScriptCompiler::_write_struct_key_get(CodeGen &codegen, const GDScriptCod
 	}
 }
 
+// Optional chaining: compiles the chain `p_expression` (`a?.b.c()`) into an untyped temporary that is `null` unless
+// every optional link found a value. Each optional link opens an `if` block (see `_write_optional_chain_check()`),
+// they are all closed here, after the value of the whole chain is assigned. So `a?.b()` is like `if a != null: a.b()`.
+GDScriptCodeGenerator::Address GDScriptCompiler::_parse_optional_chain(CodeGen &codegen, Error &r_error, const GDScriptParser::ExpressionNode *p_expression, bool p_root, bool p_initializer) {
+	GDScriptCodeGenerator *gen = codegen.generator;
+	const GDScriptParser::ExpressionNode *previous_root = codegen.optional_chain_root;
+	const int previous_open_ifs = codegen.optional_chain_open_ifs;
+	codegen.optional_chain_root = p_expression;
+	codegen.optional_chain_open_ifs = 0;
+
+	GDScriptCodeGenerator::Address result;
+	if (!p_root) {
+		result = codegen.add_temporary();
+		gen->write_assign_null(result);
+	}
+
+	GDScriptCodeGenerator::Address value = _parse_expression(codegen, r_error, p_expression, p_root, p_initializer);
+	if (!r_error) {
+		if (!p_root && value.mode != GDScriptCodeGenerator::Address::NIL) {
+			gen->write_assign(result, value);
+		}
+		if (value.mode == GDScriptCodeGenerator::Address::TEMPORARY) {
+			gen->pop_temporary();
+		}
+		for (int i = 0; i < codegen.optional_chain_open_ifs; i++) {
+			gen->write_endif();
+		}
+	}
+
+	codegen.optional_chain_root = previous_root;
+	codegen.optional_chain_open_ifs = previous_open_ifs;
+	return result;
+}
+
+// Optional link (`base?.`): the rest of the chain only runs if `base` is not `null` (a freed object counts as `null`).
+void GDScriptCompiler::_write_optional_chain_check(CodeGen &codegen, const GDScriptCodeGenerator::Address &p_base) {
+	if (codegen.optional_chain_root == nullptr) {
+		return; // Not inside a chain (shouldn't happen): `_parse_optional_chain()` couldn't close the block.
+	}
+	GDScriptCodeGenerator *gen = codegen.generator;
+	GDScriptDataType bool_type;
+	bool_type.kind = GDScriptDataType::BUILTIN;
+	bool_type.builtin_type = Variant::BOOL;
+	GDScriptCodeGenerator::Address is_not_null = codegen.add_temporary(bool_type);
+	gen->write_binary_operator(is_not_null, Variant::OP_NOT_EQUAL, p_base, codegen.add_constant(Variant()));
+	gen->write_if(is_not_null);
+	gen->pop_temporary();
+	codegen.optional_chain_open_ifs++;
+}
+
 GDScriptCodeGenerator::Address GDScriptCompiler::_parse_expression(CodeGen &codegen, Error &r_error, const GDScriptParser::ExpressionNode *p_expression, bool p_root, bool p_initializer) {
 	if (p_expression->is_constant && !(p_expression->type_constraint.is_meta_type && p_expression->type_constraint.kind == GDScriptParser::DataType::CLASS)) {
 		return codegen.add_constant(p_expression->reduced_value);
+	}
+
+	if (p_expression->is_optional_chain_root && codegen.optional_chain_root != p_expression) {
+		return _parse_optional_chain(codegen, r_error, p_expression, p_root, p_initializer);
 	}
 
 	GDScriptCodeGenerator *gen = codegen.generator;
@@ -666,6 +725,24 @@ GDScriptCodeGenerator::Address GDScriptCompiler::_parse_expression(CodeGen &code
 			const bool checks_callable_return = !p_root && !is_awaited && result.type.has_type() && (GDScriptAnalyzer::is_typed_callable_return_call(call) || GDScriptAnalyzer::is_load_file_call(call));
 			GDScriptCodeGenerator::Address call_target = checks_callable_return ? codegen.add_temporary() : result;
 
+			// Optional chaining (`a?.method()`, `a?.b.method()`): the base is evaluated first, then the arguments are
+			// only evaluated (and the method only called) if no optional link found `null`.
+			bool has_optional_callee_base = false;
+			GDScriptCodeGenerator::Address optional_callee_base;
+			if (!call->is_super && call->callee != nullptr && call->callee->type == GDScriptParser::Node::SUBSCRIPT) {
+				const GDScriptParser::SubscriptNode *callee_subscript = static_cast<const GDScriptParser::SubscriptNode *>(call->callee);
+				if (callee_subscript->is_attribute && callee_subscript->base != nullptr && GDScriptParser::has_optional_chain_link(callee_subscript)) {
+					optional_callee_base = _parse_expression(codegen, r_error, callee_subscript->base);
+					if (r_error) {
+						return GDScriptCodeGenerator::Address();
+					}
+					if (callee_subscript->is_optional) {
+						_write_optional_chain_check(codegen, optional_callee_base);
+					}
+					has_optional_callee_base = true;
+				}
+			}
+
 			Vector<GDScriptCodeGenerator::Address> arguments;
 			for (uint32_t i = 0; i < call->arguments.size(); i++) {
 				GDScriptCodeGenerator::Address arg = _parse_expression(codegen, r_error, call->arguments[i]);
@@ -726,9 +803,9 @@ GDScriptCodeGenerator::Address GDScriptCompiler::_parse_expression(CodeGen &code
 
 						if (subscript->is_attribute) {
 							// May be static built-in method call.
-							if (!call->is_super && subscript->base->type == GDScriptParser::Node::IDENTIFIER && GDScriptParser::get_builtin_type(static_cast<GDScriptParser::IdentifierNode *>(subscript->base)->name) < Variant::VARIANT_MAX) {
+							if (!has_optional_callee_base && !call->is_super && subscript->base->type == GDScriptParser::Node::IDENTIFIER && GDScriptParser::get_builtin_type(static_cast<GDScriptParser::IdentifierNode *>(subscript->base)->name) < Variant::VARIANT_MAX) {
 								gen->write_call_builtin_type_static(call_target, GDScriptParser::get_builtin_type(static_cast<GDScriptParser::IdentifierNode *>(subscript->base)->name), subscript->attribute->name, arguments);
-							} else if (!call->is_super && subscript->base->type == GDScriptParser::Node::IDENTIFIER && call->function_name != SNAME("new") &&
+							} else if (!has_optional_callee_base && !call->is_super && subscript->base->type == GDScriptParser::Node::IDENTIFIER && call->function_name != SNAME("new") &&
 									static_cast<GDScriptParser::IdentifierNode *>(subscript->base)->source == GDScriptParser::IdentifierNode::NATIVE_CLASS && !Engine::get_singleton()->has_singleton(static_cast<GDScriptParser::IdentifierNode *>(subscript->base)->name)) {
 								// It's a static native method call.
 								StringName class_name = static_cast<GDScriptParser::IdentifierNode *>(subscript->base)->name;
@@ -741,7 +818,7 @@ GDScriptCodeGenerator::Address GDScriptCompiler::_parse_expression(CodeGen &code
 									gen->write_call_native_static(call_target, class_name, subscript->attribute->name, arguments);
 								}
 							} else {
-								GDScriptCodeGenerator::Address base = _parse_expression(codegen, r_error, subscript->base);
+								GDScriptCodeGenerator::Address base = has_optional_callee_base ? optional_callee_base : _parse_expression(codegen, r_error, subscript->base);
 								if (r_error) {
 									return GDScriptCodeGenerator::Address();
 								}
@@ -842,18 +919,23 @@ GDScriptCodeGenerator::Address GDScriptCompiler::_parse_expression(CodeGen &code
 		// Indexing operator.
 		case GDScriptParser::Node::SUBSCRIPT: {
 			const GDScriptParser::SubscriptNode *subscript = static_cast<const GDScriptParser::SubscriptNode *>(p_expression);
-			GDScriptCodeGenerator::Address result = codegen.add_temporary(_gdtype_from_datatype(subscript->type_constraint, codegen.script));
+			// An optional link (`base?.[key]`) gives `null` for a missing key, so its value is untyped.
+			GDScriptCodeGenerator::Address result = codegen.add_temporary(subscript->is_optional ? GDScriptDataType() : _gdtype_from_datatype(subscript->type_constraint, codegen.script));
 
 			GDScriptCodeGenerator::Address base = _parse_expression(codegen, r_error, subscript->base);
 			if (r_error) {
 				return GDScriptCodeGenerator::Address();
+			}
+			if (subscript->is_optional) {
+				// `base?.name` / `base?.[index]`: the index and the rest of the chain are skipped if `base` is `null`.
+				_write_optional_chain_check(codegen, base);
 			}
 
 			bool named = subscript->is_attribute;
 			StringName name;
 			GDScriptCodeGenerator::Address index;
 			if (subscript->is_attribute) {
-				if (subscript->base->type == GDScriptParser::Node::SELF && codegen.script) {
+				if (subscript->base->type == GDScriptParser::Node::SELF && codegen.script && !subscript->is_optional) {
 					GDScriptParser::IdentifierNode *identifier = subscript->attribute;
 					HashMap<StringName, GDScript::MemberInfo>::Iterator MI = codegen.script->member_indices.find(identifier->name);
 
@@ -899,6 +981,9 @@ GDScriptCodeGenerator::Address GDScriptCompiler::_parse_expression(CodeGen &code
 
 			if (is_optional_struct_key) {
 				_write_struct_key_get(codegen, raw_value, base, subscript->base->type_constraint, struct_key_index);
+			} else if (subscript->is_optional && struct_key_index < 0) {
+				// A missing key or member, or an out of bounds index, gives `null`.
+				gen->write_get_optional(raw_value, named ? codegen.add_constant(name) : index, base);
 			} else if (named) {
 				gen->write_get_named(raw_value, name, base);
 			} else {

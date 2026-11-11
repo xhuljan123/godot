@@ -39,6 +39,39 @@
 #include "editor/settings/editor_settings.h"
 #include "scene/gui/text_edit.h"
 
+// Whether the word `type` at `[p_word_start, p_word_end)` starts a type alias declaration (`type Name = ...`):
+// it must be the first word of the line (optionally after `static`) and be followed by a name and "=".
+bool GDScriptSyntaxHighlighter::_is_type_alias_keyword(const String &p_line, int p_word_start, int p_word_end) {
+	const int line_length = p_line.length();
+
+	// Only whitespace (or `static`) before.
+	String before = p_line.substr(0, p_word_start).strip_edges();
+	if (!before.is_empty() && before != "static") {
+		return false;
+	}
+
+	// A name after.
+	int k = p_word_end;
+	if (k >= line_length || !is_whitespace(p_line[k])) {
+		return false;
+	}
+	while (k < line_length && is_whitespace(p_line[k])) {
+		k++;
+	}
+	if (k >= line_length || !is_unicode_identifier_start(p_line[k])) {
+		return false;
+	}
+	while (k < line_length && is_unicode_identifier_continue(p_line[k])) {
+		k++;
+	}
+
+	// Then "=" (but not "==").
+	while (k < line_length && is_whitespace(p_line[k])) {
+		k++;
+	}
+	return k < line_length && p_line[k] == '=' && (k + 1 >= line_length || p_line[k + 1] != '=');
+}
+
 Dictionary GDScriptSyntaxHighlighter::_get_line_syntax_highlighting_impl(int p_line) {
 	Dictionary color_map;
 
@@ -71,6 +104,7 @@ Dictionary GDScriptSyntaxHighlighter::_get_line_syntax_highlighting_impl(int p_l
 	bool in_var_const_declaration = false;
 	bool is_after_var_const_declaration = false;
 	bool expect_type = false;
+	bool in_type_alias_declaration = false; // After `type` in `type Name = ...`, until the "=".
 
 	int in_declaration_params = 0; // The number of opened `(` after func/signal name.
 	int in_declaration_param_dicts = 0; // The number of opened `{` inside func params.
@@ -495,7 +529,11 @@ Dictionary GDScriptSyntaxHighlighter::_get_line_syntax_highlighting_impl(int p_l
 
 			String word = str.substr(j, to - j);
 			Color col;
-			if (global_functions.has(word)) {
+			if (word == "type" && _is_type_alias_keyword(str, j, to)) {
+				// `type Name = ...` declares a type alias. `type` is only a keyword there, so it can still be a name elsewhere.
+				col = type_alias_keyword_color;
+				in_type_alias_declaration = true;
+			} else if (global_functions.has(word)) {
 				// "assert" and "preload" are reserved, so highlight even if not followed by a bracket.
 				if (word == GDScriptTokenizer::get_token_name(GDScriptTokenizer::Token::ASSERT) || word == GDScriptTokenizer::get_token_name(GDScriptTokenizer::Token::PRELOAD)) {
 					col = global_function_color;
@@ -653,6 +691,12 @@ Dictionary GDScriptSyntaxHighlighter::_get_line_syntax_highlighting_impl(int p_l
 					in_type_params = 0;
 				}
 				if ((is_after_var_const_declaration || (in_declaration_params == 1 && in_declaration_param_dicts == 0)) && str[j] == ':') {
+					expect_type = true;
+					in_type_params = 0;
+				}
+				if (in_type_alias_declaration && str[j] == '=') {
+					// The aliased type: `type Name = Type`.
+					in_type_alias_declaration = false;
 					expect_type = true;
 					in_type_params = 0;
 				}
@@ -869,9 +913,16 @@ void GDScriptSyntaxHighlighter::_update_cache() {
 	struct_utility_types.insert(SNAME("StructToVariant"));
 	struct_utility_types.insert(SNAME("Omit"));
 	struct_utility_types.insert(SNAME("KeyOf"));
+	struct_utility_types.insert(SNAME("Pick"));
+	struct_utility_types.insert(SNAME("List"));
+	struct_utility_types.insert(SNAME("ListFrom"));
+	struct_utility_types.insert(SNAME("DictionaryWithKeys"));
+	struct_utility_types.insert(SNAME("NestedArray"));
+	struct_utility_types.insert(SNAME("NestedDictionary"));
 
 	/* Reserved words. */
 	const Color keyword_color = EDITOR_GET("text_editor/theme/highlighting/keyword_color");
+	type_alias_keyword_color = keyword_color;
 	const Color control_flow_keyword_color = EDITOR_GET("text_editor/theme/highlighting/control_flow_keyword_color");
 	for (const String &keyword : gdscript->get_reserved_words()) {
 		if (gdscript->is_control_flow_keyword(keyword)) {

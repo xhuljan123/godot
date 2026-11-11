@@ -1249,7 +1249,7 @@ static void _list_available_types(bool p_inherit_only, GDScriptParser::Completio
 		r_result.insert(variant_option.display, variant_option);
 
 		// Struct types and struct utility types.
-		static const char *struct_type_names[] = { "Struct", "Partial", "Required", "StructFromClass", "ExtractFromClass", "StructToVariant", "Omit", "KeyOf" };
+		static const char *struct_type_names[] = { "Struct", "Partial", "Required", "StructFromClass", "ExtractFromClass", "StructToVariant", "Omit", "KeyOf", "Pick", "List", "ListFrom", "DictionaryWithKeys", "NestedArray", "NestedDictionary" };
 		for (const char *struct_type_name : struct_type_names) {
 			EditorLanguage::CompletionOption struct_option(struct_type_name, EditorLanguage::CompletionKind::CLASS);
 			r_result.insert(struct_option.display, struct_option);
@@ -3226,7 +3226,22 @@ static void _find_enumeration_candidates(GDScriptParser::CompletionContext &p_co
 }
 
 // Suggests the accepted keys (as string literals) where a `KeyOf[StructType]` value is expected.
+// Also suggests the accepted values where a `List[...]` value is expected.
 static void _find_key_of_candidates(const GDScriptParser::DataType &p_type, const GDScriptParser::Node *p_existing, HashMap<String, EditorLanguage::CompletionOption> &r_result) {
+	if (p_type.is_value_list_type()) {
+		for (const Variant &value : p_type.value_list_values) {
+			if (value.get_type() == Variant::STRING || value.get_type() == Variant::STRING_NAME) {
+				EditorLanguage::CompletionOption option = _calculate_string_insertion(p_existing, value.operator String(), Variant::STRING);
+				option.kind = EditorLanguage::CompletionKind::CONSTANT;
+				r_result.insert(option.display, option);
+			} else {
+				const String text = value.get_construct_string();
+				EditorLanguage::CompletionOption option(text, EditorLanguage::CompletionKind::CONSTANT);
+				r_result.insert(option.display, option);
+			}
+		}
+		return;
+	}
 	if (!p_type.is_key_of_type()) {
 		return;
 	}
@@ -3813,8 +3828,8 @@ static void _find_call_arguments(GDScriptParser::CompletionContext &p_context, c
 			if (!type.enumeration.is_empty()) {
 				_find_enumeration_candidates(completion_context, type.enumeration, options);
 				r_forced = options.size() > 0;
-			} else if (type.type.is_key_of_type()) {
-				// `KeyOf[StructType]`: suggest the accepted keys first, then the other identifiers.
+			} else if (type.type.is_key_of_type() || type.type.is_value_list_type()) {
+				// `KeyOf[StructType]` and `List[...]`: suggest the accepted keys/values first, then the other identifiers.
 				_find_key_of_candidates(type.type, static_cast<const GDScriptParser::AssignmentNode *>(completion_context.node)->assigned_value, options);
 				_find_identifiers(completion_context, false, true, options, 0);
 				r_forced = true;
@@ -3926,6 +3941,28 @@ static void _find_call_arguments(GDScriptParser::CompletionContext &p_context, c
 			GDScriptCompletionIdentifier base;
 
 			if (_guess_identifier_type(completion_context, type->type_chain[0], base)) {
+				// `type Bar = Foo.key`: the keys of a struct type (and of its nested struct types).
+				GDScriptParser::DataType struct_type = base.type;
+				struct_type.is_meta_type = false;
+				if (struct_type.is_struct_type()) {
+					for (int i = 1; i < completion_context.type_chain_index && struct_type.is_struct_type(); i++) {
+						const int key_index = struct_type.find_struct_key(type->type_chain[i]->name);
+						if (key_index < 0) {
+							struct_type = GDScriptParser::DataType();
+							break;
+						}
+						struct_type = struct_type.struct_key_types[key_index];
+					}
+					if (struct_type.is_struct_type()) {
+						for (int i = 0; i < struct_type.struct_keys.size(); i++) {
+							EditorLanguage::CompletionOption option(struct_type.struct_keys[i], EditorLanguage::CompletionKind::MEMBER_VARIABLE);
+							options.insert(option.display, option);
+						}
+					}
+					r_forced = true;
+					break;
+				}
+
 				bool found = true;
 				for (int i = 1; i < completion_context.type_chain_index; i++) {
 					GDScriptCompletionIdentifier ci;

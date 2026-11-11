@@ -81,10 +81,20 @@ void GDScriptDocGen::_doctype_from_datatype(const DataType &p_datatype, String &
 		r_type = "Variant";
 		return;
 	}
+	if (p_datatype.is_value_list_type()) {
+		// Shown with the accepted values (e.g. in hover tooltips), like `List["foo", "bar", 1]`.
+		r_type = p_datatype.to_string_expanded();
+		return;
+	}
 	switch (p_datatype.kind) {
 		case DataType::BUILTIN:
 			if (p_datatype.builtin_type == Variant::NIL) {
 				r_type = p_is_return ? "void" : "null";
+				return;
+			}
+			if (p_datatype.is_nested_container && (p_datatype.builtin_type == Variant::ARRAY || p_datatype.builtin_type == Variant::DICTIONARY) && p_datatype.has_container_element_types()) {
+				// Shown with the nested element types, like `NestedArray[Array[int]]`.
+				r_type = p_datatype.to_string_expanded();
 				return;
 			}
 			if (p_datatype.builtin_type == Variant::ARRAY && p_datatype.has_container_element_type(0)) {

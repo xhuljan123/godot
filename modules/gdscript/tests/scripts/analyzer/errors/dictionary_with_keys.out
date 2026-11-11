@@ -1,0 +1,6 @@
+GDTEST_ANALYZER_ERROR
+>> ERROR at line 4: Missing required key "bar" for struct type "Foo".
+>> ERROR at line 5: Missing required key "foo" for struct type "Foo".
+>> ERROR at line 6: Cannot assign a value of type "String" to key "foo" of type "int".
+>> ERROR at line 7: "DictionaryWithKeys" only supports string keys, but 1 is "int".
+>> ERROR at line 8: "DictionaryWithKeys" expects a list of keys (like "List["a", "b"]", "ListFrom[...]" or "KeyOf[...]") as first argument, but got "int".

@@ -63,6 +63,9 @@ private:
 	HashSet<StringName> global_functions;
 	HashSet<StringName> struct_utility_types; // `Struct`, `Partial`, `ExtractFromClass`, etc. (only highlighted before `[`).
 	Color struct_utility_type_color;
+	Color type_alias_keyword_color; // `type` in `type Name = ...`, same color as `var`/`func`.
+
+	static bool _is_type_alias_keyword(const String &p_line, int p_word_start, int p_word_end);
 
 	enum Type {
 		NONE,

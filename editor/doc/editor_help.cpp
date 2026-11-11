@@ -632,6 +632,34 @@ static void _add_type_to_rt(const String &p_type, const String &p_enum, bool p_i
 		return;
 	}
 
+	if (p_enum.is_empty() && (p_type.begins_with("List[") || p_type.begins_with("NestedArray[") || p_type.begins_with("NestedDictionary[") || p_type.begins_with("DictionaryWithKeys["))) {
+		// GDScript `List["a", 1]` (accepted values), `NestedArray[...]`/`NestedDictionary[...]` (nested typed collections)
+		// and `DictionaryWithKeys[Keys, Value]` (a dictionary with all the listed keys).
+		const int bracket = p_type.find_char('[');
+		const String type_name = p_type.left(bracket);
+		String link = "Variant";
+		String hint = TTR("Only one of these values is accepted.");
+		if (type_name == "NestedArray") {
+			link = "Array";
+			hint = TTR("An Array whose element type can be a typed collection.");
+		} else if (type_name == "NestedDictionary") {
+			link = "Dictionary";
+			hint = TTR("A Dictionary whose key and value types can be typed collections.");
+		} else if (type_name == "DictionaryWithKeys") {
+			link = "Dictionary";
+			hint = TTR("A Dictionary that must have all of these keys.");
+		}
+		p_rt->push_color(type_color);
+		p_rt->push_meta("#" + link, RichTextLabel::META_UNDERLINE_ON_HOVER); // class
+		p_rt->push_hint(hint);
+		p_rt->add_text(type_name);
+		p_rt->pop(); // hint
+		p_rt->pop(); // meta
+		p_rt->add_text(p_type.substr(bracket));
+		p_rt->pop(); // color
+		return;
+	}
+
 	if (p_enum.is_empty() && p_type.begins_with("Struct[")) {
 		// GDScript struct type: a `Dictionary` with known keys.
 		p_rt->push_color(type_color);

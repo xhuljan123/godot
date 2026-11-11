@@ -124,6 +124,20 @@ public:
 
 		StringName alias_name; // Set if this type comes from a type alias (`type Name = ...`). Used for display only.
 
+		// Accepted values (`List["foo", "bar", 1]` and `ListFrom[...]`), like a literal union in TypeScript.
+		// The type is the common built-in type of the values (`String` for `List["a", "b"]`), or `Variant` (VARIANT kind) if they differ.
+		// `StringName` values are stored as `String`.
+		bool is_value_list = false;
+		Vector<Variant> value_list_values;
+
+		// `NestedArray[...]` / `NestedDictionary[...]`: an `Array`/`Dictionary` whose element types can be typed collections themselves.
+		// The element types are in `container_element_types` as usual. Used for display (and to allow the nesting).
+		bool is_nested_container = false;
+
+		// `DictionaryWithKeys[ListType, ValueType]`: a struct type with a required key for each value of the list.
+		// Holds the two type arguments, for display only (size 0 or 2).
+		Vector<DataType> dictionary_with_keys_source;
+
 		// Callable signature (`Callable[int, String]`). At runtime it's a plain `Callable`, the signature is only checked statically.
 		// Set for annotated typed callables, and for callable values whose signature is known (lambdas and function references).
 		bool is_typed_callable = false;
@@ -244,6 +258,66 @@ public:
 		_FORCE_INLINE_ bool is_typed_callable_type() const { return is_typed_callable && kind == BUILTIN && builtin_type == Variant::CALLABLE && !is_meta_type; }
 
 		_FORCE_INLINE_ bool is_key_of_type() const { return is_key_of && kind == BUILTIN && builtin_type == Variant::STRING && !is_meta_type; }
+
+		_FORCE_INLINE_ bool is_value_list_type() const { return is_value_list && (kind == BUILTIN || kind == VARIANT) && !is_meta_type; }
+
+		// Whether `p_value` is one of the accepted values. `String` and `StringName` are considered equal, other types must match exactly.
+		static bool value_list_has(const Vector<Variant> &p_values, const Variant &p_value) {
+			const bool is_string = p_value.get_type() == Variant::STRING || p_value.get_type() == Variant::STRING_NAME;
+			for (const Variant &value : p_values) {
+				const bool value_is_string = value.get_type() == Variant::STRING || value.get_type() == Variant::STRING_NAME;
+				if (is_string != value_is_string || (!is_string && value.get_type() != p_value.get_type())) {
+					continue;
+				}
+				if (is_string ? (value.operator String() == p_value.operator String()) : (value == p_value)) {
+					return true;
+				}
+			}
+			return false;
+		}
+
+		bool has_value_list_value(const Variant &p_value) const { return value_list_has(value_list_values, p_value); }
+
+		// Whether a value of type `p_type` can be one of the accepted values (ignoring the values themselves).
+		bool can_value_list_have_type(const DataType &p_type) const {
+			if (p_type.kind == VARIANT) {
+				return true;
+			}
+			if (p_type.kind == ENUM) {
+				return can_value_list_have_type_builtin(Variant::INT);
+			}
+			if (p_type.kind != BUILTIN) {
+				return can_value_list_have_type_builtin(Variant::OBJECT);
+			}
+			return can_value_list_have_type_builtin(p_type.builtin_type);
+		}
+
+		bool can_value_list_have_type_builtin(Variant::Type p_type) const {
+			for (const Variant &value : value_list_values) {
+				const Variant::Type value_type = value.get_type();
+				if (value_type == p_type || (value_type == Variant::STRING && p_type == Variant::STRING_NAME) || (value_type == Variant::STRING_NAME && p_type == Variant::STRING)) {
+					return true;
+				}
+			}
+			return false;
+		}
+
+		// List of the accepted values for messages and display, like `"foo", "bar", 1`.
+		String get_value_list_text() const {
+			String text;
+			for (int i = 0; i < value_list_values.size(); i++) {
+				if (i > 0) {
+					text += ", ";
+				}
+				text += value_list_values[i].get_construct_string();
+			}
+			return text;
+		}
+
+		void clear_value_list() {
+			is_value_list = false;
+			value_list_values.clear();
+		}
 
 		// List of the accepted keys for messages, like `"foo", "bar"`.
 		String get_key_of_values_text() const {
@@ -396,6 +470,10 @@ public:
 			key_of_values = p_other.key_of_values;
 			key_of_struct = p_other.key_of_struct;
 			alias_name = p_other.alias_name;
+			is_value_list = p_other.is_value_list;
+			value_list_values = p_other.value_list_values;
+			is_nested_container = p_other.is_nested_container;
+			dictionary_with_keys_source = p_other.dictionary_with_keys_source;
 			is_typed_callable = p_other.is_typed_callable;
 			callable_arg_types = p_other.callable_arg_types;
 			callable_default_arg_count = p_other.callable_default_arg_count;
@@ -512,6 +590,9 @@ public:
 		bool reduced = false;
 		bool is_constant = false;
 		Variant reduced_value;
+		// Outermost node of an attribute/subscript/call chain that contains an optional link (`a?.b.c()`).
+		// If an optional link finds `null`, the rest of the chain is skipped and the whole chain is `null`.
+		bool is_optional_chain_root = false;
 
 		DataType type_constraint;
 
@@ -1264,6 +1345,7 @@ public:
 		};
 
 		bool is_attribute = false;
+		bool is_optional = false; // Optional chaining: `base?.attribute` or `base?.[index]`.
 
 		SubscriptNode() {
 			type = SUBSCRIPT;
@@ -1419,6 +1501,9 @@ public:
 			STRUCT_MODIFIER_STRUCT_TO_VARIANT, // `StructToVariant[StructType]`: same keys (and optionality), all with `Variant` values.
 			STRUCT_MODIFIER_OMIT, // `Omit[StructType, { key, other }]`: the struct type without the listed keys.
 			STRUCT_MODIFIER_KEY_OF, // `KeyOf[StructType]`: a `String` that can only be one of the struct keys (not a struct type itself).
+			STRUCT_MODIFIER_PICK, // `Pick[StructType, { key, other }]`: the struct type with only the listed keys.
+			STRUCT_MODIFIER_LIST_FROM, // `ListFrom[Source]`: a `List[...]` of the names of an enum, or of the keys of a struct type or a constant dictionary.
+			STRUCT_MODIFIER_DICTIONARY_WITH_KEYS, // `DictionaryWithKeys[ListType, ValueType]`: a struct type with a required key for each list value.
 		};
 		StructModifier struct_modifier = STRUCT_MODIFIER_NONE;
 		// Keys left as they are by `Partial[StructType, { key, other }]` and `Required[StructType, { key, other }]`,
@@ -1428,6 +1513,13 @@ public:
 			Node *key_node = nullptr; // IdentifierNode or LiteralNode, for error reporting.
 		};
 		LocalVector<StructModifierKey> struct_modifier_excluded_keys;
+
+		// `List["foo", "bar", 1]`: the accepted values (constant expressions).
+		bool is_value_list = false;
+		LocalVector<ExpressionNode *> value_list_values;
+
+		// `NestedArray[Array[int]]` / `NestedDictionary[String, Array[int]]`: like `Array`/`Dictionary`, but the element types can be typed collections.
+		bool is_nested_container = false;
 
 		DataType resolved_type;
 
@@ -1849,6 +1941,8 @@ private:
 	ExpressionNode *parse_cast(ExpressionNode *p_previous_operand, bool p_can_assign);
 	ExpressionNode *parse_await(ExpressionNode *p_previous_operand, bool p_can_assign);
 	ExpressionNode *parse_attribute(ExpressionNode *p_previous_operand, bool p_can_assign);
+	ExpressionNode *parse_optional_chain(ExpressionNode *p_previous_operand, bool p_can_assign);
+	static void update_optional_chain_root(ExpressionNode *p_node, ExpressionNode *p_base, bool p_is_optional_link);
 	ExpressionNode *parse_subscript(ExpressionNode *p_previous_operand, bool p_can_assign);
 	ExpressionNode *parse_lambda(ExpressionNode *p_previous_operand, bool p_can_assign);
 	ExpressionNode *parse_type_test(ExpressionNode *p_previous_operand, bool p_can_assign);
@@ -1856,6 +1950,12 @@ private:
 	ExpressionNode *parse_invalid_token(ExpressionNode *p_previous_operand, bool p_can_assign);
 	TypeNode *parse_type(bool p_allow_void = false);
 	bool is_struct_key_on_next_line() const;
+
+public:
+	// Whether an attribute/subscript/call chain contains an optional link (`?.`).
+	static bool has_optional_chain_link(const ExpressionNode *p_node);
+
+private:
 	// TODO: Remove in 5.x.
 	bool parse_standalone_string();
 

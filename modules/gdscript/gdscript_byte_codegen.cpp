@@ -845,6 +845,13 @@ void GDScriptByteCodeGenerator::write_get(const Address &p_target, const Address
 	append(p_target);
 }
 
+void GDScriptByteCodeGenerator::write_get_optional(const Address &p_target, const Address &p_index, const Address &p_source) {
+	append_opcode(GDScriptFunction::OPCODE_GET_KEYED_OPTIONAL);
+	append(p_source);
+	append(p_index);
+	append(p_target);
+}
+
 void GDScriptByteCodeGenerator::write_set_named(const Address &p_target, const StringName &p_name, const Address &p_source) {
 	if (HAS_BUILTIN_TYPE(p_target) && Variant::get_member_validated_setter(p_target.type.builtin_type, p_name) &&
 			IS_BUILTIN_TYPE(p_source, Variant::get_member_type(p_target.type.builtin_type, p_name))) {

@@ -1,0 +1,4 @@
+GDTEST_ANALYZER_ERROR
+>> ERROR at line 2: Key "baz" does not exist in struct type "Foo".
+>> ERROR at line 3: Cannot get the type of key "baz" because "int" is not a struct type.
+>> ERROR at line 6: Cannot assign a value of type Array to variable "a" with specified type int.

@@ -1,0 +1,10 @@
+GDTEST_ANALYZER_ERROR
+>> ERROR at line 8: Cannot return "up" as "Direction". Expected one of: "left", "right".
+>> ERROR at line 11: Cannot assign 2 as "Foo". Expected one of: "foo", "bar", 1.
+>> ERROR at line 12: Cannot assign "test" as "Foo". Expected one of: "foo", "bar", 1.
+>> ERROR at line 13: Cannot assign a value of type Array to variable "c" with specified type Foo. Expected one of: "foo", "bar", 1.
+>> ERROR at line 14: Cannot pass "down" as "Direction". Expected one of: "left", "right".
+>> ERROR at line 17: Value of type "List["left", "up"]" cannot be assigned to a variable of type "Direction". Value "up" is not one of: "left", "right".
+>> ERROR at line 18: Cannot assign 1 as "Direction". Expected one of: "left", "right".
+>> ERROR at line 19: "List" types cannot be used with the "is" operator. Use "in" with the accepted values instead.
+>> ERROR at line 20: Value 1 is already in the list.

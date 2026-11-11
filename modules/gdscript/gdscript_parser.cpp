@@ -3197,6 +3197,10 @@ GDScriptParser::ExpressionNode *GDScriptParser::parse_assignment(ExpressionNode 
 		push_error(R"(Only identifier, attribute access, and subscription access can be used as assignment target.)");
 		return parse_expression(false); // Return the following expression.
 	}
+	if (has_optional_chain_link(p_previous_operand)) {
+		push_error(R"(Optional chaining ("?.") cannot be used in an assignment target.)");
+		return parse_expression(false); // Return the following expression.
+	}
 
 	AssignmentNode *assignment = alloc_node<AssignmentNode>();
 	reset_extents(assignment, p_previous_operand);
@@ -3462,7 +3466,62 @@ GDScriptParser::ExpressionNode *GDScriptParser::parse_attribute(ExpressionNode *
 	attribute->attribute = parse_identifier();
 
 	complete_extents(attribute);
+	update_optional_chain_root(attribute, p_previous_operand, false);
 	return attribute;
+}
+
+// Optional chaining: `base?.attribute`, `base?.method()` and `base?.[index]` (the "?." was already consumed).
+// If `base` is `null`, the rest of the chain isn't evaluated and the result is `null`. `base?.[index]` also gives `null`
+// if the key or index doesn't exist.
+GDScriptParser::ExpressionNode *GDScriptParser::parse_optional_chain(ExpressionNode *p_previous_operand, bool p_can_assign) {
+	SubscriptNode *link = nullptr;
+	if (check(GDScriptTokenizer::Token::BRACKET_OPEN)) {
+		push_multiline(true); // Before consuming "[", like `parse_precedence()` does for subscripts. Popped by `parse_subscript()`.
+		advance();
+		link = static_cast<SubscriptNode *>(parse_subscript(p_previous_operand, p_can_assign));
+	} else {
+		ExpressionNode *attribute = parse_attribute(p_previous_operand, p_can_assign);
+		if (attribute != nullptr && attribute->type == Node::SUBSCRIPT) {
+			link = static_cast<SubscriptNode *>(attribute);
+		}
+	}
+	if (link == nullptr) {
+		return p_previous_operand;
+	}
+	link->is_optional = true;
+	update_optional_chain_root(link, p_previous_operand, true);
+	return link;
+}
+
+// Keeps `is_optional_chain_root` on the outermost node of a chain (`a?.b.c()`): when `p_node` extends the chain of `p_base`,
+// it becomes the root instead. An optional link always starts (or continues) a chain.
+void GDScriptParser::update_optional_chain_root(ExpressionNode *p_node, ExpressionNode *p_base, bool p_is_optional_link) {
+	if (p_node == nullptr) {
+		return;
+	}
+	if (p_base != nullptr && p_base->is_optional_chain_root) {
+		p_base->is_optional_chain_root = false;
+		p_node->is_optional_chain_root = true;
+	} else if (p_is_optional_link) {
+		p_node->is_optional_chain_root = true;
+	}
+}
+
+bool GDScriptParser::has_optional_chain_link(const ExpressionNode *p_node) {
+	while (p_node != nullptr) {
+		if (p_node->type == Node::SUBSCRIPT) {
+			const SubscriptNode *subscript = static_cast<const SubscriptNode *>(p_node);
+			if (subscript->is_optional) {
+				return true;
+			}
+			p_node = subscript->base;
+		} else if (p_node->type == Node::CALL) {
+			p_node = static_cast<const CallNode *>(p_node)->callee;
+		} else {
+			return false;
+		}
+	}
+	return false;
 }
 
 GDScriptParser::ExpressionNode *GDScriptParser::parse_subscript(ExpressionNode *p_previous_operand, bool p_can_assign) {
@@ -3488,6 +3547,7 @@ GDScriptParser::ExpressionNode *GDScriptParser::parse_subscript(ExpressionNode *
 	pop_multiline();
 	consume(GDScriptTokenizer::Token::BRACKET_CLOSE, R"(Expected "]" after subscription index.)");
 	complete_extents(subscript);
+	update_optional_chain_root(subscript, p_previous_operand, false);
 
 	return subscript;
 }
@@ -3611,6 +3671,9 @@ GDScriptParser::ExpressionNode *GDScriptParser::parse_call(ExpressionNode *p_pre
 	pop_multiline();
 	consume(GDScriptTokenizer::Token::PARENTHESIS_CLOSE, R"*(Expected closing ")" after call arguments.)*");
 	complete_extents(call);
+	if (!call->is_super) {
+		update_optional_chain_root(call, call->callee, false);
+	}
 
 	return call;
 }
@@ -3959,6 +4022,12 @@ GDScriptParser::TypeNode *GDScriptParser::parse_type(bool p_allow_void) {
 		struct_modifier = TypeNode::STRUCT_MODIFIER_OMIT;
 	} else if (type_element->name == SNAME("KeyOf")) {
 		struct_modifier = TypeNode::STRUCT_MODIFIER_KEY_OF;
+	} else if (type_element->name == SNAME("Pick")) {
+		struct_modifier = TypeNode::STRUCT_MODIFIER_PICK;
+	} else if (type_element->name == SNAME("ListFrom")) {
+		struct_modifier = TypeNode::STRUCT_MODIFIER_LIST_FROM;
+	} else if (type_element->name == SNAME("DictionaryWithKeys")) {
+		struct_modifier = TypeNode::STRUCT_MODIFIER_DICTIONARY_WITH_KEYS;
 	}
 	if (struct_modifier != TypeNode::STRUCT_MODIFIER_NONE && check(GDScriptTokenizer::Token::BRACKET_OPEN)) {
 		push_multiline(true); // The argument can be a multiline struct type.
@@ -3970,11 +4039,23 @@ GDScriptParser::TypeNode *GDScriptParser::parse_type(bool p_allow_void) {
 		} else {
 			type->container_types.push_back(argument);
 		}
-		if (argument != nullptr && match(GDScriptTokenizer::Token::COMMA)) {
+		const bool has_keys_argument = struct_modifier == TypeNode::STRUCT_MODIFIER_PARTIAL || struct_modifier == TypeNode::STRUCT_MODIFIER_REQUIRED || struct_modifier == TypeNode::STRUCT_MODIFIER_OMIT || struct_modifier == TypeNode::STRUCT_MODIFIER_PICK;
+		const bool has_keys_to_pick = struct_modifier == TypeNode::STRUCT_MODIFIER_PICK;
+		if (argument != nullptr && struct_modifier == TypeNode::STRUCT_MODIFIER_DICTIONARY_WITH_KEYS) {
+			// `DictionaryWithKeys[ListType, ValueType]`.
+			if (consume(GDScriptTokenizer::Token::COMMA, R"(Expected "," and the value type after the keys of "DictionaryWithKeys", like "DictionaryWithKeys[List["a", "b"], int]".)")) {
+				TypeNode *value_type = parse_type(false);
+				if (value_type == nullptr) {
+					push_error(R"(Expected value type after "DictionaryWithKeys[Keys,".)");
+				} else {
+					type->container_types.push_back(value_type);
+				}
+			}
+		} else if (argument != nullptr && match(GDScriptTokenizer::Token::COMMA)) {
 			// `Partial[StructType, { key, other }]`: keys to exclude (they keep their own optionality).
-			if (struct_modifier == TypeNode::STRUCT_MODIFIER_FROM_CLASS || struct_modifier == TypeNode::STRUCT_MODIFIER_EXTRACT_FROM_CLASS || struct_modifier == TypeNode::STRUCT_MODIFIER_STRUCT_TO_VARIANT || struct_modifier == TypeNode::STRUCT_MODIFIER_KEY_OF) {
+			if (!has_keys_argument) {
 				push_error(vformat(R"("%s" takes a single type argument.)", type_element->name));
-			} else if (consume(GDScriptTokenizer::Token::BRACE_OPEN, vformat(R"(Expected "{" with the keys to %s after "%s[Type,".)", struct_modifier == TypeNode::STRUCT_MODIFIER_OMIT ? "omit" : "exclude", type_element->name))) {
+			} else if (consume(GDScriptTokenizer::Token::BRACE_OPEN, vformat(R"(Expected "{" with the keys to %s after "%s[Type,".)", struct_modifier == TypeNode::STRUCT_MODIFIER_OMIT ? "omit" : (has_keys_to_pick ? "pick" : "exclude"), type_element->name))) {
 				HashSet<StringName> excluded;
 				while (!check(GDScriptTokenizer::Token::BRACE_CLOSE) && !is_at_end()) {
 					TypeNode::StructModifierKey key;
@@ -3995,11 +4076,11 @@ GDScriptParser::TypeNode *GDScriptParser::parse_type(bool p_allow_void) {
 						key.name = StringName(key_literal->value.operator String());
 						key.key_node = key_literal;
 					} else {
-						push_error(vformat(R"(Expected key name (identifier or string) in the keys to exclude of "%s".)", type_element->name));
+						push_error(vformat(R"(Expected key name (identifier or string) in the keys to %s of "%s".)", has_keys_to_pick ? "pick" : "exclude", type_element->name));
 						break;
 					}
 					if (excluded.has(key.name)) {
-						push_error(vformat(R"(Key "%s" is already excluded.)", key.name), key.key_node);
+						push_error(vformat(R"(Key "%s" is already %s.)", key.name, has_keys_to_pick ? "picked" : "excluded"), key.key_node);
 					} else {
 						excluded.insert(key.name);
 						type->struct_modifier_excluded_keys.push_back(key);
@@ -4008,13 +4089,41 @@ GDScriptParser::TypeNode *GDScriptParser::parse_type(bool p_allow_void) {
 						break;
 					}
 				}
-				consume(GDScriptTokenizer::Token::BRACE_CLOSE, R"(Expected closing "}" after the keys to exclude.)");
+				consume(GDScriptTokenizer::Token::BRACE_CLOSE, vformat(R"(Expected closing "}" after the keys to %s.)", has_keys_to_pick ? "pick" : "exclude"));
 			}
 		} else if (argument != nullptr && struct_modifier == TypeNode::STRUCT_MODIFIER_OMIT) {
 			push_error(R"("Omit" expects the keys to omit as a second argument, like "Omit[StructType, { key }]".)");
+		} else if (argument != nullptr && struct_modifier == TypeNode::STRUCT_MODIFIER_PICK) {
+			push_error(R"("Pick" expects the keys to pick as a second argument, like "Pick[StructType, { key }]".)");
 		}
 		pop_multiline();
 		consume(GDScriptTokenizer::Token::BRACKET_CLOSE, vformat(R"(Expected closing "]" after "%s" type argument.)", type_element->name));
+		complete_extents(type);
+		return type;
+	}
+
+	if (type_element->name == SNAME("List") && check(GDScriptTokenizer::Token::BRACKET_OPEN)) {
+		// `List["foo", "bar", 1]`: only these values are accepted (like a union of literal types in TypeScript).
+		// The values are constant expressions, checked by the analyzer. They can span multiple lines.
+		push_multiline(true);
+		advance(); // "[".
+		type->is_value_list = true;
+		while (!check(GDScriptTokenizer::Token::BRACKET_CLOSE) && !is_at_end()) {
+			ExpressionNode *value = parse_expression(false);
+			if (value == nullptr) {
+				push_error(R"(Expected a constant value in "List[...]".)");
+				break;
+			}
+			type->value_list_values.push_back(value);
+			if (!match(GDScriptTokenizer::Token::COMMA)) {
+				break;
+			}
+		}
+		pop_multiline();
+		consume(GDScriptTokenizer::Token::BRACKET_CLOSE, R"(Expected closing "]" after the values of "List".)");
+		if (type->value_list_values.is_empty()) {
+			push_error(R"("List" expects at least one value, like "List["foo", "bar"]".)", type);
+		}
 		complete_extents(type);
 		return type;
 	}
@@ -4155,6 +4264,9 @@ GDScriptParser::TypeNode *GDScriptParser::parse_type(bool p_allow_void) {
 		}
 
 		// Typed collection (like Array[int], Dictionary[String, int]).
+		// `NestedArray[...]` and `NestedDictionary[...]` are the same, but their element types can be typed collections.
+		const bool is_nested_container = type_element->name == SNAME("NestedArray") || type_element->name == SNAME("NestedDictionary");
+		type->is_nested_container = is_nested_container;
 		bool first_pass = true;
 		do {
 			TypeNode *container_type = parse_type(false); // Don't allow void for element type.
@@ -4163,8 +4275,8 @@ GDScriptParser::TypeNode *GDScriptParser::parse_type(bool p_allow_void) {
 				complete_extents(type);
 				type = nullptr;
 				break;
-			} else if (container_type->container_types.size() > 0 && container_type->struct_modifier == TypeNode::STRUCT_MODIFIER_NONE && !container_type->is_callable_signature) {
-				push_error("Nested typed collections are not supported.");
+			} else if (!is_nested_container && container_type->container_types.size() > 0 && container_type->struct_modifier == TypeNode::STRUCT_MODIFIER_NONE && !container_type->is_callable_signature) {
+				push_error(R"(Nested typed collections are not supported. Use "NestedArray[...]" or "NestedDictionary[...]" instead.)");
 			} else {
 				type->container_types.push_back(container_type);
 			}
@@ -4639,6 +4751,7 @@ GDScriptParser::ParseRule *GDScriptParser::get_rule(GDScriptTokenizer::Token::Ty
 		{ nullptr,                                          nullptr,                                        PREC_NONE }, // VCS_CONFLICT_MARKER,
 		{ nullptr,                                          nullptr,                                        PREC_NONE }, // BACKTICK,
 		{ nullptr,                                          &GDScriptParser::parse_invalid_token,        	PREC_CAST }, // QUESTION_MARK,
+		{ nullptr,                                          &GDScriptParser::parse_optional_chain,       	PREC_ATTRIBUTE }, // QUESTION_PERIOD,
 		// Special
 		{ nullptr,                                          nullptr,                                        PREC_NONE }, // ERROR,
 		{ nullptr,                                          nullptr,                                        PREC_NONE }, // TK_EOF,
@@ -5650,6 +5763,9 @@ String GDScriptParser::DataType::to_string_with_alias() const {
 }
 
 String GDScriptParser::DataType::to_string_expanded() const {
+	if (is_value_list_type()) {
+		return vformat("List[%s]", get_value_list_text());
+	}
 	switch (kind) {
 		case VARIANT:
 			return "Variant";
@@ -5658,10 +5774,13 @@ String GDScriptParser::DataType::to_string_expanded() const {
 				return "null";
 			}
 			if (builtin_type == Variant::ARRAY && has_container_element_type(0)) {
-				return vformat("Array[%s]", get_container_element_type(0).to_string());
+				return vformat(is_nested_container ? "NestedArray[%s]" : "Array[%s]", get_container_element_type(0).to_string());
 			}
 			if (builtin_type == Variant::DICTIONARY && has_container_element_types()) {
-				return vformat("Dictionary[%s, %s]", get_container_element_type_or_variant(0).to_string(), get_container_element_type_or_variant(1).to_string());
+				return vformat(is_nested_container ? "NestedDictionary[%s, %s]" : "Dictionary[%s, %s]", get_container_element_type_or_variant(0).to_string(), get_container_element_type_or_variant(1).to_string());
+			}
+			if (builtin_type == Variant::DICTIONARY && is_struct && !is_meta_type && dictionary_with_keys_source.size() == 2) {
+				return vformat("DictionaryWithKeys[%s, %s]", dictionary_with_keys_source[0].to_string(), dictionary_with_keys_source[1].to_string());
 			}
 			if (is_typed_callable_type()) {
 				String arguments;
@@ -5815,6 +5934,14 @@ PropertyInfo GDScriptParser::DataType::to_property_info(const String &p_name) co
 					keys.push_back(key);
 				}
 				result.hint_string = String(",").join(keys);
+			} else if (is_value_list_type() && (builtin_type == Variant::STRING || builtin_type == Variant::INT)) {
+				// `List["a", "b"]` and `List[1, 2]`: shown as a dropdown of the values in the inspector.
+				result.hint = PROPERTY_HINT_ENUM;
+				Vector<String> options;
+				for (const Variant &value : value_list_values) {
+					options.push_back(builtin_type == Variant::INT ? vformat("%s:%s", value, value) : value.operator String());
+				}
+				result.hint_string = String(",").join(options);
 			}
 			break;
 		case NATIVE:

@@ -491,6 +491,7 @@ public:
 	virtual void write_end_ternary() override;
 	virtual void write_set(const Address &p_target, const Address &p_index, const Address &p_source) override;
 	virtual void write_get(const Address &p_target, const Address &p_index, const Address &p_source) override;
+	virtual void write_get_optional(const Address &p_target, const Address &p_index, const Address &p_source) override;
 	virtual void write_set_named(const Address &p_target, const StringName &p_name, const Address &p_source) override;
 	virtual void write_get_named(const Address &p_target, const StringName &p_name, const Address &p_source) override;
 	virtual void write_set_member(const Address &p_value, const StringName &p_name) override;

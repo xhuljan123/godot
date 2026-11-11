@@ -152,6 +152,7 @@ static const char *token_names[] = {
 	"VCS conflict marker", // VCS_CONFLICT_MARKER,
 	"`", // BACKTICK,
 	"?", // QUESTION_MARK,
+	"?.", // QUESTION_PERIOD,
 	// Special
 	"Error", // ERROR,
 	"End of file", // EOF,
@@ -1551,6 +1552,10 @@ GDScriptTokenizer::Token GDScriptTokenizerText::scan() {
 		case '$':
 			return make_token(Token::DOLLAR);
 		case '?':
+			if (_peek() == '.') {
+				_advance();
+				return make_token(Token::QUESTION_PERIOD); // Optional chaining (`a?.b`, `a?.[i]`).
+			}
 			return make_token(Token::QUESTION_MARK);
 		case '`':
 			return make_token(Token::BACKTICK);
