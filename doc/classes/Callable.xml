@@ -131,7 +131,7 @@
 					foo.bind_strict(1, 2) # Error: argument 2 should be "String".
 					foo.bind_strict(1, "bar", "foo") # Error: too many arguments.
 				[/codeblock]
-				In GDScript, the result is typed as [code]BoundCallable[/code] (or [code]BoundCallable[ReturnType][/code] when the return type is known): a [Callable] that can only be called with [method call] (or [method call_deferred]) without arguments. A variable declared with [code]:=[/code] keeps that type, and only [code]bind_strict()[/code] results can be assigned to a [code]BoundCallable[/code].
+				In GDScript, the result is typed as [code]BoundCallable[/code] (or [code]BoundCallable[ReturnType][/code] when the return type is known): a [Callable] that can only be called with [method call] (or [method call_deferred]) without arguments. A variable declared with [code]:=[/code] keeps that type, and only [method bind_strict] results can be assigned to a [code]BoundCallable[/code].
 				[codeblock]
 				var bar := foo.bind_strict(1) # `BoundCallable`.
 				bar.call() # Valid.
