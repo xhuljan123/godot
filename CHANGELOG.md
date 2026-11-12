@@ -37,7 +37,7 @@ Table of contents:
   - [parseOptional](#parseoptional)
   - [load_file](#load_file)
 - [Editor support](#editor-support)
-- [Removed and renamed](#removed-and-renamed)
+- [Recent changes](#recent-changes)
 
 ### Types
 
@@ -456,3 +456,12 @@ var missing := load_file("res://missing.tscn") # Error: File "res://missing.tscn
 - Argument hints: `call()`, `call_deferred()` and `bind_strict()` on a callable with a known signature show its argument types.
 - Code completion: type names, struct keys (in literals, after `.`, in `Foo.` types), `List`/`KeysOf` values in assignments and call arguments, members after `?.`.
 - Hover tooltips, argument hints and the script documentation show the full types, including the aliased type of type aliases (`Foo (Struct[{ ... }])`).
+
+### Recent changes
+
+#### 2026-11-12
+
+- Added [`Callable.bind_strict()`](#callablebind_strict): like `bind()`, but missing required arguments, wrong argument types and extra arguments are errors in the editor.
+- Added [`FunctionArgType[function]`](#functionargtype): a typed callable with the argument types of a function (`FunctionArgType[foo]` is `Callable[int, String]` for `func foo(arg_1: int, arg_2 := "bar")`).
+- [`inferType()`](#infertype) now also accepts a lambda or a function name, and returns its full signature (`Callable[int, float][int]`), with the return type inferred from the `return` statements. A `:=` variable declared from it keeps the signature.
+- The error for a callable with too many required arguments now ends with "The last N argument(s) are optional, since they have default values." (previously "... default values in the initial value."), since the default values can also come from the function itself.
