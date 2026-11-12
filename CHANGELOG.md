@@ -23,11 +23,14 @@ Table of contents:
   - [DictionaryWithKeys](#dictionarywithkeys)
   - [NestedArray and NestedDictionary](#nestedarray-and-nesteddictionary)
   - [Typed callables](#typed-callables-callableargsreturn)
+  - [FunctionArgType](#functionargtype)
 - [Syntax](#syntax)
   - [Optional chaining](#optional-chaining-)
   - [Block comments](#block-comments--)
 - [Classes](#classes)
   - [StructRef](#structref)
+- [Methods](#methods)
+  - [Callable.bind_strict](#callablebind_strict)
 - [Functions](#functions)
   - [inferType](#infertype)
   - [mergeObjects](#mergeobjects)
@@ -285,6 +288,26 @@ func _ready():
 	on_hit = func(text: String) -> bool: return true # Error: incompatible signature.
 ```
 
+#### FunctionArgType
+
+`FunctionArgType[function]` is a typed callable with the argument types of a function (like `Parameters<typeof foo>` in TypeScript). Arguments with a default value stay optional, and the return type isn't included. The function can be a function of the current class, of another class (`Other.function`) or a typed callable constant.
+
+```gdscript
+func foo(arg_1: int, arg_2 := "bar") -> String:
+	return "%d %s" % [arg_1, arg_2]
+
+type Bar = FunctionArgType[foo] # Callable[int, String]
+
+func run(callback: Bar) -> void:
+	callback.call(1) # OK, the second argument is optional.
+	callback.call(1, 2) # Error: argument 2 should be "String".
+
+func _ready():
+	run(foo)
+	run(func(a: int, b: String = "") -> String: return b) # Any function with compatible arguments.
+	run(func(a: String) -> void: pass) # Error: parameter 1 cannot receive "int".
+```
+
 ### Syntax
 
 #### Optional chaining: `?.`
@@ -341,17 +364,52 @@ func _ready():
 	Foo.new({ baz = 1 }) # Error: "baz" isn't a variable of Foo.
 ```
 
+### Methods
+
+#### Callable.bind_strict
+
+`bind_strict(...)` works exactly like `bind()` at runtime, but the bound arguments are checked against the function's signature in the editor: every required argument must be bound (arguments with a default value may be left out), each one must have the right type, and extra arguments are errors. It works on function names, lambdas and typed callables; on a plain `Callable` whose signature isn't known it behaves like `bind()`.
+
+```gdscript
+func foo(arg_1: int, arg_2 := "bar") -> String:
+	return "%d %s" % [arg_1, arg_2]
+
+func _ready():
+	foo.bind_strict() # Error: missing arguments.
+	foo.bind_strict(1) # Valid, since arg_2 is optional.
+	foo.bind_strict("1") # Error: argument 1 should be "int".
+	foo.bind_strict(1, 2) # Error: argument 2 should be "String".
+	foo.bind_strict(1, "bar", "foo") # Error: too many arguments.
+
+	var text: String = foo.bind_strict(2, "baz").call() # "2 baz", typed as the return type of foo().
+```
+
+The result is typed as a callable that takes no arguments (calling it with more would shift the bound arguments, like with `bind()`) and keeps the function's return type.
+
 ### Functions
 
 #### inferType
 
-`inferType(value)` returns the dictionary literal unchanged, typed as a struct inferred from it: nested dictionaries become nested structs, and arrays whose elements share a type become typed arrays.
+`inferType(value)` returns the value unchanged, typed from it:
+
+- A dictionary literal is typed as a struct inferred from it: nested dictionaries become nested structs, and arrays whose elements share a type become typed arrays.
+- A lambda (or a function name) is typed as its full signature, `Callable[Args][Return]`. Untyped parameters with a default value are typed as the default value. Without a return type annotation, the return type is inferred from the `return` statements (their common type, or `Variant` if they differ), and there is none if the function doesn't return a value.
 
 ```gdscript
 var player := inferType({ name: "Bob", hp: 10, tags: ["fast"] })
 # Struct[{ name: String, hp: int, tags: Array[String] }]
 player.hp = "full" # Error: "hp" is an int.
+
+var foo := inferType(func(arg1: int, arg2 = 1.0):
+	return arg1 + int(arg2)
+) # Callable[int, float][int]
+var total: int = foo.call(1) # OK, arg2 is optional.
+foo.call("1") # Error: argument 1 should be "int".
+
+var printer := inferType(func(text: String): print(text)) # Callable[String] (no return value)
 ```
+
+A variable declared with `:=` from `inferType(func ...)` keeps the signature (a `:=` variable from a plain lambda stays an untyped `Callable`).
 
 #### mergeObjects
 
@@ -394,6 +452,7 @@ var missing := load_file("res://missing.tscn") # Error: File "res://missing.tscn
 
 ### Editor support
 
-- Syntax highlighting: `type` in type alias declarations uses the keyword color (like `var` and `func`). `Struct`, `Partial`, `Required`, `Omit`, `Pick`, `StructFromClass`, `ExtractExportableVars`, `StructToVariant`, `List`, `KeysOf`, `DictionaryWithKeys`, `NestedArray` and `NestedDictionary` use the base type color when followed by `[`.
+- Syntax highlighting: `type` in type alias declarations uses the keyword color (like `var` and `func`). `Struct`, `Partial`, `Required`, `Omit`, `Pick`, `StructFromClass`, `ExtractExportableVars`, `StructToVariant`, `List`, `KeysOf`, `DictionaryWithKeys`, `NestedArray`, `NestedDictionary` and `FunctionArgType` use the base type color when followed by `[`.
+- Argument hints: `call()`, `call_deferred()` and `bind_strict()` on a callable with a known signature show its argument types.
 - Code completion: type names, struct keys (in literals, after `.`, in `Foo.` types), `List`/`KeysOf` values in assignments and call arguments, members after `?.`.
 - Hover tooltips, argument hints and the script documentation show the full types, including the aliased type of type aliases (`Foo (Struct[{ ... }])`).

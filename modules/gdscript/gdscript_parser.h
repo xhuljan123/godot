@@ -1473,6 +1473,7 @@ public:
 			STRUCT_MODIFIER_OMIT, // `Omit[StructType, { key, other }]`: the struct type without the listed keys.
 			STRUCT_MODIFIER_PICK, // `Pick[StructType, { key, other }]`: the struct type with only the listed keys.
 			STRUCT_MODIFIER_KEYS_OF, // `KeysOf[Source]`: a `List[...]` of the names of an enum, or of the keys of a struct type or a constant dictionary.
+			STRUCT_MODIFIER_FUNCTION_ARG_TYPE, // `FunctionArgType[function]`: a `Callable[...]` with the argument types of a function.
 			STRUCT_MODIFIER_DICTIONARY_WITH_KEYS, // `DictionaryWithKeys[ListType, ValueType]`: a struct type with a required key for each list value.
 		};
 		StructModifier struct_modifier = STRUCT_MODIFIER_NONE;

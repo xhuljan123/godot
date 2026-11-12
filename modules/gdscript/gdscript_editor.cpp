@@ -858,6 +858,8 @@ static String _make_typed_callable_arguments_hint(const GDScriptParser::DataType
 	String return_type = "Variant";
 	if (p_method == SNAME("call_deferred")) {
 		return_type = "void";
+	} else if (p_method == SNAME("bind_strict")) {
+		return_type = "Callable";
 	} else if (p_callable_type.has_typed_callable_return_type()) {
 		const GDScriptParser::DataType callable_return = p_callable_type.get_callable_return_type();
 		return_type = (callable_return.kind == GDScriptParser::DataType::BUILTIN && callable_return.builtin_type == Variant::NIL) ? String("void") : callable_return.to_string();
@@ -1249,7 +1251,7 @@ static void _list_available_types(bool p_inherit_only, GDScriptParser::Completio
 		r_result.insert(variant_option.display, variant_option);
 
 		// Struct types and struct utility types.
-		static const char *struct_type_names[] = { "Struct", "Partial", "Required", "StructFromClass", "ExtractExportableVars", "StructToVariant", "Omit", "Pick", "List", "KeysOf", "DictionaryWithKeys", "NestedArray", "NestedDictionary" };
+		static const char *struct_type_names[] = { "Struct", "Partial", "Required", "StructFromClass", "ExtractExportableVars", "StructToVariant", "Omit", "Pick", "List", "KeysOf", "DictionaryWithKeys", "NestedArray", "NestedDictionary", "FunctionArgType" };
 		for (const char *struct_type_name : struct_type_names) {
 			EditorLanguage::CompletionOption struct_option(struct_type_name, EditorLanguage::CompletionKind::CLASS);
 			r_result.insert(struct_option.display, struct_option);
@@ -3452,7 +3454,7 @@ static void _list_call_arguments(GDScriptParser::CompletionContext &p_context, c
 				base_type.kind = GDScriptParser::DataType::UNRESOLVED;
 			} break;
 			case GDScriptParser::DataType::BUILTIN: {
-				if (base_type.is_typed_callable_type() && (method == SNAME("call") || method == SNAME("call_deferred"))) {
+				if (base_type.is_typed_callable_type() && (method == SNAME("call") || method == SNAME("call_deferred") || method == SNAME("bind_strict"))) {
 					// `Callable[int, String]`: show the declared signature instead of the vararg `Callable.call()`.
 					r_arghint = _make_typed_callable_arguments_hint(base_type, method, p_argidx);
 					return;

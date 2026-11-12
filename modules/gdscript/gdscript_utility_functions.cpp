@@ -460,11 +460,19 @@ struct GDScriptUtilityFunctionsDefinitions {
 		}
 	}
 
-	// Identity at runtime. The analyzer gives the call a struct type inferred from the dictionary literal
-	// passed to it (see `GDScriptAnalyzer::reduce_infer_type_call()`).
+	// Identity at runtime. The analyzer gives the call a struct type inferred from the dictionary literal passed to it,
+	// or the full signature of a function (see `GDScriptAnalyzer::reduce_infer_type_call()`).
 	static inline void inferType(Variant *r_ret, const Variant **p_args, int p_arg_count, Callable::CallError &r_error) {
 		DEBUG_VALIDATE_ARG_COUNT(1, 1);
-		DEBUG_VALIDATE_ARG_TYPE(0, Variant::DICTIONARY);
+#ifdef DEBUG_ENABLED
+		if (p_args[0]->get_type() != Variant::DICTIONARY && p_args[0]->get_type() != Variant::CALLABLE) {
+			*r_ret = vformat(R"(Argument "value" must be a Dictionary or a Callable, but is "%s".)", Variant::get_type_name(p_args[0]->get_type()));
+			r_error.error = Callable::CallError::CALL_ERROR_INVALID_ARGUMENT;
+			r_error.argument = 0;
+			r_error.expected = Variant::DICTIONARY;
+			return;
+		}
+#endif // DEBUG_ENABLED
 		*r_ret = *p_args[0];
 	}
 
@@ -629,7 +637,7 @@ void GDScriptUtilityFunctions::register_functions() {
 	REGISTER_FUNC( get_stack,      false, RET(ARRAY),         NOARGS,                                  false, varray(     ));
 	REGISTER_FUNC( len,            true,  RET(INT),           ARGS( ARGVAR("var")                   ), false, varray(     ));
 	REGISTER_FUNC( is_instance_of, true,  RET(BOOL),          ARGS( ARGVAR("value"), ARGVAR("type") ), false, varray(     ));
-	REGISTER_FUNC( inferType,      false, RET(DICTIONARY),    ARGS( ARG("value", DICTIONARY)        ), false, varray(     ));
+	REGISTER_FUNC( inferType,      false, RETVAR,             ARGS( ARGVAR("value")                 ), false, varray(     ));
 	REGISTER_FUNC( mergeObjects,   false, RET(DICTIONARY),    ARGS( ARG("defaults", DICTIONARY),
 																	ARG("overrides", DICTIONARY)   ), false, varray(     ));
 	REGISTER_FUNC( parseOptional,  true,  RETVAR,             ARGS( ARGVAR("value"),

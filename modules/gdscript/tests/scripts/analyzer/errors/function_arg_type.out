@@ -1,0 +1,4 @@
+GDTEST_ANALYZER_ERROR
+>> ERROR at line 2: "FunctionArgType" expects a function, but "NUMBER" is "int".
+>> ERROR at line 3: "FunctionArgType" expects a function, but "Node" is "a type".
+>> ERROR at line 9: Cannot assign a value of type Callable[String, String][void] to variable "callback" with specified type Callable[int, String]. Parameter 1 of the function is "String", which cannot receive "int".

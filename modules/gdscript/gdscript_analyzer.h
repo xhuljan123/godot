@@ -85,6 +85,9 @@ class GDScriptAnalyzer {
 	bool reduce_value_list_value(GDScriptParser::ExpressionNode *p_value, Variant &r_value);
 	static GDScriptParser::DataType make_value_list_type(const Vector<Variant> &p_values);
 	GDScriptParser::DataType resolve_keys_of_type(GDScriptParser::TypeNode *p_type);
+	GDScriptParser::DataType resolve_function_arg_type(GDScriptParser::TypeNode *p_type);
+	GDScriptParser::DataType infer_function_type(GDScriptParser::ExpressionNode *p_function);
+	void resolve_lambda_body(GDScriptParser::LambdaNode *p_lambda);
 	static bool is_nested_container_type_name(const GDScriptParser::TypeNode *p_type);
 	static bool is_container_element_type_equal(const GDScriptParser::DataType &p_target, const GDScriptParser::DataType &p_source);
 	GDScriptParser::DataType make_struct_type_from_class(GDScriptParser::ClassNode *p_class, const GDScriptParser::Node *p_source, bool p_exported_only = false);

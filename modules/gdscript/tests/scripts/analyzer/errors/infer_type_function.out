@@ -1,0 +1,5 @@
+GDTEST_ANALYZER_ERROR
+>> ERROR at line 3: Cannot pass a value of type "String" as "int".
+>> ERROR at line 3: Invalid argument for "call()" function: argument 1 should be "int" but is "String".
+>> ERROR at line 4: Cannot assign a value of type int to variable "text" with specified type String.
+>> ERROR at line 5: Value of type "Callable[String, float][int]" cannot be assigned to a variable of type "Callable[int, float][int]". Parameter 1 of the function is "String", which cannot receive "int".

@@ -1200,6 +1200,11 @@ struct _VariantCall {
 		r_ret = callable->bindp(p_args, p_argcount);
 	}
 
+	// Same as `bind()` at runtime. GDScript checks the bound arguments against the function's signature at compile time.
+	static void func_Callable_bind_strict(Variant *p_variant, const Variant **p_args, int p_argcount, Variant &r_ret, Callable::CallError &r_error) {
+		func_Callable_bind(p_variant, p_args, p_argcount, r_ret, r_error);
+	}
+
 	static int func_Callable_get_argument_count(Callable *p_callable) {
 		return p_callable->get_argument_count();
 	}
@@ -2450,6 +2455,7 @@ static void _register_variant_builtin_methods_misc() {
 	bind_custom(Callable, rpc, _VariantCall::func_Callable_rpc, false, Variant);
 	bind_custom1(Callable, rpc_id, _VariantCall::func_Callable_rpc_id, Variant::INT, "peer_id");
 	bind_custom(Callable, bind, _VariantCall::func_Callable_bind, true, Callable);
+	bind_custom(Callable, bind_strict, _VariantCall::func_Callable_bind_strict, true, Callable);
 
 	/* Signal */
 

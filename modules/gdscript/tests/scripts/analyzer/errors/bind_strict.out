@@ -1,0 +1,9 @@
+GDTEST_ANALYZER_ERROR
+>> ERROR at line 5: Too few arguments for "bind_strict()" call. Expected at least 1 but received 0.
+>> ERROR at line 6: Cannot pass a value of type "String" as "int".
+>> ERROR at line 6: Invalid argument for "bind_strict()" function: argument 1 should be "int" but is "String".
+>> ERROR at line 7: Cannot pass a value of type "int" as "String".
+>> ERROR at line 7: Invalid argument for "bind_strict()" function: argument 2 should be "String" but is "int".
+>> ERROR at line 8: Too many arguments for "bind_strict()" call. Expected at most 2 but received 3.
+>> ERROR at line 10: Cannot pass a value of type "String" as "int".
+>> ERROR at line 10: Invalid argument for "bind_strict()" function: argument 1 should be "int" but is "String".

@@ -115,6 +115,25 @@
 				[b]Note:[/b] When this method is chained with other similar methods, the order in which the argument list is modified is read from right to left.
 			</description>
 		</method>
+		<method name="bind_strict" qualifiers="vararg const">
+			<return type="Callable" />
+			<description>
+				Same as [method bind], but in GDScript the bound arguments are checked against the signature of the function when the script is compiled: every required argument must be bound (arguments with a default value may be omitted), each one must have the right type, and extra arguments are errors. The returned [Callable] is meant to be called without arguments.
+				[codeblock]
+				func foo(arg_1: int, arg_2 := "bar"):
+					print(arg_1, arg_2)
+
+				func _ready():
+					foo.bind_strict(1).call() # Prints "1bar".
+					foo.bind_strict(1, "baz").call() # Prints "1baz".
+					foo.bind_strict() # Error: missing argument 1.
+					foo.bind_strict("1") # Error: argument 1 should be "int".
+					foo.bind_strict(1, 2) # Error: argument 2 should be "String".
+					foo.bind_strict(1, "bar", "foo") # Error: too many arguments.
+				[/codeblock]
+				The checks need a known signature: a function name ([code]foo.bind_strict(...)[/code]), a lambda or a typed callable ([code]Callable[int, String][/code]). On a [Callable] whose signature isn't known, it works like [method bind].
+			</description>
+		</method>
 		<method name="bindv">
 			<return type="Callable" />
 			<param index="0" name="arguments" type="Array" />

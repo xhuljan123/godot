@@ -4006,7 +4006,7 @@ GDScriptParser::TypeNode *GDScriptParser::parse_type(bool p_allow_void) {
 		push_multiline(true);
 	}
 
-	// Utility types: `Partial[StructType]`, `Required[StructType]`, `StructFromClass[ClassType]`, `ExtractExportableVars[ClassType]`, `StructToVariant[StructType]`, `Omit`, `Pick`, `KeysOf[Source]` and `DictionaryWithKeys[Keys, Value]`.
+	// Utility types: `Partial[StructType]`, `Required[StructType]`, `StructFromClass[ClassType]`, `ExtractExportableVars[ClassType]`, `StructToVariant[StructType]`, `Omit`, `Pick`, `KeysOf[Source]`, `FunctionArgType[function]` and `DictionaryWithKeys[Keys, Value]`.
 	TypeNode::StructModifier struct_modifier = TypeNode::STRUCT_MODIFIER_NONE;
 	if (type_element->name == SNAME("Partial")) {
 		struct_modifier = TypeNode::STRUCT_MODIFIER_PARTIAL;
@@ -4024,6 +4024,8 @@ GDScriptParser::TypeNode *GDScriptParser::parse_type(bool p_allow_void) {
 		struct_modifier = TypeNode::STRUCT_MODIFIER_PICK;
 	} else if (type_element->name == SNAME("KeysOf")) {
 		struct_modifier = TypeNode::STRUCT_MODIFIER_KEYS_OF;
+	} else if (type_element->name == SNAME("FunctionArgType")) {
+		struct_modifier = TypeNode::STRUCT_MODIFIER_FUNCTION_ARG_TYPE;
 	} else if (type_element->name == SNAME("DictionaryWithKeys")) {
 		struct_modifier = TypeNode::STRUCT_MODIFIER_DICTIONARY_WITH_KEYS;
 	}
