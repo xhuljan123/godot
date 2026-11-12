@@ -1262,6 +1262,22 @@ GDScriptParser::DataType GDScriptAnalyzer::resolve_datatype(GDScriptParser::Type
 		return result;
 	}
 
+	if (p_type->is_bound_callable || (p_type->type_chain.size() == 1 && p_type->type_chain[0]->name == SNAME("BoundCallable") && p_type->container_types.is_empty() && !ScriptServer::is_global_class(SNAME("BoundCallable")))) {
+		// `BoundCallable` / `BoundCallable[ReturnType]`: the result of `bind_strict()`, a callable that only accepts `call()` without arguments.
+		result.kind = GDScriptParser::DataType::BUILTIN;
+		result.builtin_type = Variant::CALLABLE;
+		result.is_typed_callable = true;
+		result.is_bound_callable = true;
+		if (p_type->callable_return_type != nullptr) {
+			GDScriptParser::DataType return_type = type_from_metatype(resolve_datatype(p_type->callable_return_type));
+			return_type.is_constant = false;
+			return_type.is_read_only = false;
+			result.set_callable_return_type(return_type);
+		}
+		p_type->resolved_type = result;
+		return result;
+	}
+
 	if (p_type->struct_modifier == GDScriptParser::TypeNode::STRUCT_MODIFIER_FUNCTION_ARG_TYPE) {
 		// `FunctionArgType[function]`: a typed callable with the argument types of the function.
 		result = resolve_function_arg_type(p_type);
@@ -3043,7 +3059,7 @@ void GDScriptAnalyzer::resolve_assignable(GDScriptParser::AssignableNode *p_assi
 			}
 
 			const bool is_infer_type_call = p_assignable->initializer->type == GDScriptParser::Node::CALL && static_cast<const GDScriptParser::CallNode *>(p_assignable->initializer)->function_name == SNAME("inferType") && !static_cast<const GDScriptParser::CallNode *>(p_assignable->initializer)->is_super && (static_cast<const GDScriptParser::CallNode *>(p_assignable->initializer)->callee == nullptr || static_cast<const GDScriptParser::CallNode *>(p_assignable->initializer)->callee->type == GDScriptParser::Node::IDENTIFIER);
-			if (!is_constant && type.is_typed_callable && !is_infer_type_call) { // `inferType(func ...)` keeps the signature on purpose.
+			if (!is_constant && type.is_typed_callable && !type.is_bound_callable && !is_infer_type_call) { // `inferType(func ...)` and `BoundCallable` keep the signature on purpose.
 				// A variable inferred from a lambda or function reference stays a plain `Callable`, so it can be
 				// reassigned with a callable of any signature. Use `Callable[...]` to opt in to signature checks.
 				type.clear_callable_signature();
@@ -4446,6 +4462,13 @@ GDScriptParser::DataType GDScriptAnalyzer::reduce_parse_optional_call(GDScriptPa
 // it must accept every declared argument (and the declared argument types), and must not require more arguments
 // than the ones that can't be omitted.
 bool GDScriptAnalyzer::is_callable_signature_compatible(const GDScriptParser::DataType &p_target, const GDScriptParser::DataType &p_source, String *r_reason) {
+	if (p_target.is_bound_callable && !p_source.is_bound_callable) {
+		// `BoundCallable` only holds the result of `bind_strict()` (all its arguments are bound).
+		if (r_reason) {
+			*r_reason = R"*(Only the result of "bind_strict()" can be a "BoundCallable".)*";
+		}
+		return false;
+	}
 	const int target_count = p_target.callable_arg_types.size();
 	const int target_min_count = p_target.get_callable_required_arg_count();
 	const int source_count = p_source.callable_arg_types.size();
@@ -5626,8 +5649,23 @@ void GDScriptAnalyzer::reduce_call(GDScriptParser::CallNode *p_call, bool p_is_a
 			return_type.kind = GDScriptParser::DataType::BUILTIN;
 			return_type.builtin_type = Variant::CALLABLE;
 			return_type.is_typed_callable = true;
+			return_type.is_bound_callable = true; // `BoundCallable`.
 			if (base_type.has_typed_callable_return_type()) {
 				return_type.callable_return_type = base_type.callable_return_type;
+			}
+		}
+		if (base_type.is_typed_callable_type() && base_type.is_bound_callable && base_type.is_hard_type() && (p_call->function_name == SNAME("call") || p_call->function_name == SNAME("call_deferred")) && !p_call->arguments.is_empty()) {
+			push_error(vformat(R"*(Cannot pass arguments to "%s()" on a "BoundCallable", since all its arguments are already bound.)*", p_call->function_name), p_call->arguments[0]);
+			is_vararg = true; // Avoid a second "too many arguments" error.
+		}
+		if (base_type.is_typed_callable_type() && base_type.is_bound_callable && base_type.is_hard_type() && p_call->function_name != SNAME("call") && p_call->function_name != SNAME("call_deferred")) {
+			// A `BoundCallable` already has all its arguments: it can only be called (without arguments).
+			static const StringName rejected[] = { SNAME("callv"), SNAME("bind"), SNAME("bindv"), SNAME("bind_strict"), SNAME("unbind"), SNAME("rpc"), SNAME("rpc_id") };
+			for (const StringName &name : rejected) {
+				if (p_call->function_name == name) {
+					push_error(vformat(R"*(Cannot use "%s()" on a "BoundCallable", since all its arguments are already bound. Call it with "call()" instead.)*", name), p_call);
+					break;
+				}
 			}
 		}
 		if (is_typed_callable_return_call(p_call)) {

@@ -901,6 +901,7 @@ void GDScriptSyntaxHighlighter::_update_cache() {
 	}
 	class_names[SNAME("Variant")] = basetype_color;
 	class_names[SNAME("void")] = basetype_color;
+	class_names[SNAME("BoundCallable")] = basetype_color; // GDScript type of `bind_strict()` results.
 
 	/* Struct types and struct utility types. */
 	struct_utility_type_color = basetype_color;

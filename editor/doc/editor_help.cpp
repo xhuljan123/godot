@@ -607,6 +607,22 @@ static void _add_type_to_rt(const String &p_type, const String &p_enum, bool p_i
 		return;
 	}
 
+	if (p_enum.is_empty() && (p_type == "BoundCallable" || p_type.begins_with("BoundCallable["))) {
+		// GDScript `BoundCallable[ReturnType]`: the result of `bind_strict()`.
+		const int bracket = p_type.find_char('[');
+		p_rt->push_color(type_color);
+		p_rt->push_meta("#Callable", RichTextLabel::META_UNDERLINE_ON_HOVER); // class
+		p_rt->push_hint(TTR("A Callable with all its arguments bound (the result of bind_strict()). It can only be called with call(), without arguments."));
+		p_rt->add_text("BoundCallable");
+		p_rt->pop(); // hint
+		p_rt->pop(); // meta
+		if (bracket >= 0) {
+			p_rt->add_text(p_type.substr(bracket));
+		}
+		p_rt->pop(); // color
+		return;
+	}
+
 	if (p_enum.is_empty() && (p_type.begins_with("List[") || p_type.begins_with("NestedArray[") || p_type.begins_with("NestedDictionary[") || p_type.begins_with("DictionaryWithKeys["))) {
 		// GDScript `List["a", 1]` (accepted values), `NestedArray[...]`/`NestedDictionary[...]` (nested typed collections)
 		// and `DictionaryWithKeys[Keys, Value]` (a dictionary with all the listed keys).

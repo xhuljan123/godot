@@ -131,6 +131,12 @@
 					foo.bind_strict(1, 2) # Error: argument 2 should be "String".
 					foo.bind_strict(1, "bar", "foo") # Error: too many arguments.
 				[/codeblock]
+				In GDScript, the result is typed as [code]BoundCallable[/code] (or [code]BoundCallable[ReturnType][/code] when the return type is known): a [Callable] that can only be called with [method call] (or [method call_deferred]) without arguments. A variable declared with [code]:=[/code] keeps that type, and only [code]bind_strict()[/code] results can be assigned to a [code]BoundCallable[/code].
+				[codeblock]
+				var bar := foo.bind_strict(1) # `BoundCallable`.
+				bar.call() # Valid.
+				bar.call(1) # Error: all the arguments are already bound.
+				[/codeblock]
 				The checks need a known signature: a function name ([code]foo.bind_strict(...)[/code]), a lambda or a typed callable ([code]Callable[int, String][/code]). On a [Callable] whose signature isn't known, it works like [method bind].
 			</description>
 		</method>

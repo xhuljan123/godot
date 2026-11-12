@@ -1,0 +1,6 @@
+GDTEST_ANALYZER_ERROR
+>> ERROR at line 6: Cannot pass arguments to "call()" on a "BoundCallable", since all its arguments are already bound.
+>> ERROR at line 7: Cannot use "callv()" on a "BoundCallable", since all its arguments are already bound. Call it with "call()" instead.
+>> ERROR at line 8: Cannot use "bind()" on a "BoundCallable", since all its arguments are already bound. Call it with "call()" instead.
+>> ERROR at line 9: Cannot assign a value of type Callable[][void] to variable "not_bound" with specified type BoundCallable. Only the result of "bind_strict()" can be a "BoundCallable".
+>> ERROR at line 10: Cannot assign a value of type BoundCallable[String] to variable "wrong_return" with specified type BoundCallable[int]. The function returns "String", but "BoundCallable[int]" must return "int".

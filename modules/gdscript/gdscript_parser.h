@@ -143,6 +143,9 @@ public:
 		// Return type (`Callable[int, String][bool]`), size 0 or 1. Empty if unknown (`Callable[int]`): calling returns `Variant`.
 		// For lambdas and function references it's the declared return type (a non-hard `Variant` if there's none).
 		Vector<DataType> callable_return_type;
+		// `BoundCallable` (the result of `bind_strict()`): a typed callable without arguments that can only be called.
+		// Only `BoundCallable` values can be assigned to it.
+		bool is_bound_callable = false;
 
 		enum Kind {
 			BUILTIN,
@@ -324,6 +327,7 @@ public:
 
 		void clear_callable_signature() {
 			is_typed_callable = false;
+			is_bound_callable = false;
 			callable_arg_types.clear();
 			callable_default_arg_count = 0;
 			callable_is_vararg = false;
@@ -446,6 +450,7 @@ public:
 			is_nested_container = p_other.is_nested_container;
 			dictionary_with_keys_source = p_other.dictionary_with_keys_source;
 			is_typed_callable = p_other.is_typed_callable;
+			is_bound_callable = p_other.is_bound_callable;
 			callable_arg_types = p_other.callable_arg_types;
 			callable_default_arg_count = p_other.callable_default_arg_count;
 			callable_is_vararg = p_other.callable_is_vararg;
@@ -1460,7 +1465,10 @@ public:
 		// `Callable[int, String]`: the argument types are in `container_types` (can be empty for `Callable[]`).
 		bool is_callable_signature = false;
 		// `Callable[int, String][bool]`: the return type (can be `void`). Null if not specified.
+		// Also the return type of `BoundCallable[ReturnType]`.
 		TypeNode *callable_return_type = nullptr;
+		// `BoundCallable` / `BoundCallable[ReturnType]`.
+		bool is_bound_callable = false;
 
 		// Utility types that produce a struct type from another type (the argument is `container_types[0]`).
 		enum StructModifier {

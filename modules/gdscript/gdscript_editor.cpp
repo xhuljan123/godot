@@ -1251,7 +1251,7 @@ static void _list_available_types(bool p_inherit_only, GDScriptParser::Completio
 		r_result.insert(variant_option.display, variant_option);
 
 		// Struct types and struct utility types.
-		static const char *struct_type_names[] = { "Struct", "Partial", "Required", "StructFromClass", "ExtractExportableVars", "StructToVariant", "Omit", "Pick", "List", "KeysOf", "DictionaryWithKeys", "NestedArray", "NestedDictionary", "FunctionArgType" };
+		static const char *struct_type_names[] = { "Struct", "Partial", "Required", "StructFromClass", "ExtractExportableVars", "StructToVariant", "Omit", "Pick", "List", "KeysOf", "DictionaryWithKeys", "NestedArray", "NestedDictionary", "FunctionArgType", "BoundCallable" };
 		for (const char *struct_type_name : struct_type_names) {
 			EditorLanguage::CompletionOption struct_option(struct_type_name, EditorLanguage::CompletionKind::CLASS);
 			r_result.insert(struct_option.display, struct_option);

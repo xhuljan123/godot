@@ -4128,6 +4128,21 @@ GDScriptParser::TypeNode *GDScriptParser::parse_type(bool p_allow_void) {
 		return type;
 	}
 
+	if (type_element->name == SNAME("BoundCallable") && check(GDScriptTokenizer::Token::BRACKET_OPEN)) {
+		// `BoundCallable[ReturnType]`: the result of `bind_strict()`, with a known return type (can be `void`).
+		push_multiline(true);
+		advance(); // "[".
+		type->is_bound_callable = true;
+		type->callable_return_type = parse_type(true);
+		if (type->callable_return_type == nullptr) {
+			push_error(R"(Expected return type after "BoundCallable[".)");
+		}
+		pop_multiline();
+		consume(GDScriptTokenizer::Token::BRACKET_CLOSE, R"(Expected closing "]" after "BoundCallable" return type.)");
+		complete_extents(type);
+		return type;
+	}
+
 	if (type_element->name == SNAME("Callable") && check(GDScriptTokenizer::Token::BRACKET_OPEN)) {
 		// Typed callable (like `Callable[int, String]`). The argument list can span multiple lines and can be empty (`Callable[]`).
 		push_multiline(true);
@@ -5781,6 +5796,15 @@ String GDScriptParser::DataType::to_string_expanded() const {
 			}
 			if (builtin_type == Variant::DICTIONARY && is_struct && !is_meta_type && dictionary_with_keys_source.size() == 2) {
 				return vformat("DictionaryWithKeys[%s, %s]", dictionary_with_keys_source[0].to_string(), dictionary_with_keys_source[1].to_string());
+			}
+			if (is_typed_callable_type() && is_bound_callable) {
+				// `BoundCallable[int]`. The return type isn't shown if unknown.
+				if (has_callable_return_type() && callable_return_type[0].is_hard_type()) {
+					const DataType &return_type = callable_return_type[0];
+					const bool is_void = return_type.kind == BUILTIN && return_type.builtin_type == Variant::NIL;
+					return vformat("BoundCallable[%s]", is_void ? String("void") : return_type.to_string());
+				}
+				return "BoundCallable";
 			}
 			if (is_typed_callable_type()) {
 				String arguments;

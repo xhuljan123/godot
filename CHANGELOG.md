@@ -24,6 +24,7 @@ Table of contents:
   - [NestedArray and NestedDictionary](#nestedarray-and-nesteddictionary)
   - [Typed callables](#typed-callables-callableargsreturn)
   - [FunctionArgType](#functionargtype)
+  - [BoundCallable](#boundcallable)
 - [Syntax](#syntax)
   - [Optional chaining](#optional-chaining-)
   - [Block comments](#block-comments--)
@@ -308,6 +309,27 @@ func _ready():
 	run(func(a: String) -> void: pass) # Error: parameter 1 cannot receive "int".
 ```
 
+#### BoundCallable
+
+`BoundCallable` is the type of the result of [`bind_strict()`](#callablebind_strict): a callable with all its arguments already bound, which can only be called with `call()` (or `call_deferred()`) without arguments. `BoundCallable[ReturnType]` also gives the return type.
+
+```gdscript
+func foo(arg: int) -> String:
+	return "foo %d" % arg
+
+func run(callback: BoundCallable[String]) -> String:
+	return callback.call()
+
+func _ready():
+	var bar := foo.bind_strict(1) # bar is a BoundCallable[String] (kept by `:=`).
+	bar.call() # Valid, returns "foo 1".
+	bar.call(1) # Error: no argument can be passed to a BoundCallable.
+	bar.bind(2) # Error: use call() (also for callv(), bindv(), bind_strict() and unbind()).
+	run(foo.bind_strict(2))
+	var not_bound: BoundCallable = func() -> void: pass # Error: only bind_strict() results are BoundCallable.
+	var plain: Callable = bar # A BoundCallable can still be used as a plain Callable.
+```
+
 ### Syntax
 
 #### Optional chaining: `?.`
@@ -384,7 +406,7 @@ func _ready():
 	var text: String = foo.bind_strict(2, "baz").call() # "2 baz", typed as the return type of foo().
 ```
 
-The result is typed as a callable that takes no arguments (calling it with more would shift the bound arguments, like with `bind()`) and keeps the function's return type.
+The result is a [`BoundCallable`](#boundcallable): it can only be called with `call()` without arguments (calling it with more would shift the bound arguments, like with `bind()`), and it keeps the function's return type.
 
 ### Functions
 
@@ -452,7 +474,7 @@ var missing := load_file("res://missing.tscn") # Error: File "res://missing.tscn
 
 ### Editor support
 
-- Syntax highlighting: `type` in type alias declarations uses the keyword color (like `var` and `func`). `Struct`, `Partial`, `Required`, `Omit`, `Pick`, `StructFromClass`, `ExtractExportableVars`, `StructToVariant`, `List`, `KeysOf`, `DictionaryWithKeys`, `NestedArray`, `NestedDictionary` and `FunctionArgType` use the base type color when followed by `[`.
+- Syntax highlighting: `type` in type alias declarations uses the keyword color (like `var` and `func`). `Struct`, `Partial`, `Required`, `Omit`, `Pick`, `StructFromClass`, `ExtractExportableVars`, `StructToVariant`, `List`, `KeysOf`, `DictionaryWithKeys`, `NestedArray`, `NestedDictionary` and `FunctionArgType` use the base type color when followed by `[`. `BoundCallable` uses the base type color.
 - Argument hints: `call()`, `call_deferred()` and `bind_strict()` on a callable with a known signature show its argument types.
 - Code completion: type names, struct keys (in literals, after `.`, in `Foo.` types), `List`/`KeysOf` values in assignments and call arguments, members after `?.`.
 - Hover tooltips, argument hints and the script documentation show the full types, including the aliased type of type aliases (`Foo (Struct[{ ... }])`).
@@ -461,6 +483,7 @@ var missing := load_file("res://missing.tscn") # Error: File "res://missing.tscn
 
 #### 2026-11-12
 
+- Added [`BoundCallable`](#boundcallable), the type returned by `bind_strict()`: it can only be called with `call()` without arguments, and `var foo := bar.bind_strict(...)` keeps it.
 - Added [`Callable.bind_strict()`](#callablebind_strict): like `bind()`, but missing required arguments, wrong argument types and extra arguments are errors in the editor.
 - Added [`FunctionArgType[function]`](#functionargtype): a typed callable with the argument types of a function (`FunctionArgType[foo]` is `Callable[int, String]` for `func foo(arg_1: int, arg_2 := "bar")`).
 - [`inferType()`](#infertype) now also accepts a lambda or a function name, and returns its full signature (`Callable[int, float][int]`), with the return type inferred from the `return` statements. A `:=` variable declared from it keeps the signature.

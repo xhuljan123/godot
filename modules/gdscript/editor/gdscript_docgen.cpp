@@ -114,6 +114,10 @@ void GDScriptDocGen::_doctype_from_datatype(const DataType &p_datatype, String &
 				r_type = p_datatype.to_string_expanded();
 				return;
 			}
+			if (p_datatype.is_typed_callable_type() && p_datatype.is_bound_callable) {
+				r_type = p_datatype.to_string_expanded(); // `BoundCallable` / `BoundCallable[int]`.
+				return;
+			}
 			if (p_datatype.is_typed_callable_type()) {
 				// Shown with the argument types (e.g. in hover tooltips), like `Callable[int, String]`.
 				String arguments;
