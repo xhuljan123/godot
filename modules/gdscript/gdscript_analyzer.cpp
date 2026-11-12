@@ -4455,7 +4455,7 @@ bool GDScriptAnalyzer::is_callable_signature_compatible(const GDScriptParser::Da
 		if (r_reason) {
 			*r_reason = vformat(R"(The function requires %d argument(s), but "%s" can be called with only %d.)", source_required_count, p_target.to_string(), target_min_count);
 			if (p_target.callable_default_arg_count > 0) {
-				*r_reason += vformat(R"( The last %d argument(s) are optional, since they have default values in the initial value.)", p_target.callable_default_arg_count);
+				*r_reason += vformat(R"( The last %d argument(s) are optional, since they have default values.)", p_target.callable_default_arg_count);
 			}
 		}
 		return false;

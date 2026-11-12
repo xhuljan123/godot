@@ -7,7 +7,7 @@ func test():
 	var foo := inferType(func(arg1: int, arg2 = 1.0):
 		if arg1 > 10:
 			return arg1
-		return int(arg2) + arg1
+		return arg1 + (1 if arg2 > 1.5 else 0)
 	)
 	var total: int = foo.call(2)
 	print(total)
@@ -19,8 +19,8 @@ func test():
 	var annotated := inferType(func(a: String) -> String: return a.to_upper())
 	print(annotated.call("abc"))
 
-	var reference := inferType(double)
-	print(reference.call(4))
+	var doubled := inferType(double)
+	print(doubled.call(4))
 
 	var mixed := inferType(func(flag: bool): # `Callable[bool][Variant]`.
 		if flag:
