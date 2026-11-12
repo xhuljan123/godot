@@ -1,11 +1,6 @@
 # Changelog
 
-This file lists all changes made between the current feature branch and the
-previous feature release. It is equivalent to the listings on our
-[interactive changelog](https://godotengine.github.io/godot-interactive-changelog/).
-
-Changelogs for earlier feature releases are available in their respective Git
-branches, and linked at the [end of this file](#Past-releases).
+This file lists all changes made on the original Godot repository
 
 ## Fork additions (xhuljan123/godot) - GDScript language extensions
 
