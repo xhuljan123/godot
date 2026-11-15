@@ -954,6 +954,85 @@ GDScriptParser::DataType GDScriptAnalyzer::resolve_function_arg_type(GDScriptPar
 	return result;
 }
 
+// `TypeOf[value]`: the type of a variable, constant, parameter, member or struct key, like `typeof value` in TypeScript.
+// The value is an identifier, optionally followed by attributes (`node.position`, `config.key`, `Other.CONSTANT`).
+// Untyped variables give `Variant`, struct keys give their declared type. Functions give their typed callable type.
+// Returns an unset type (after reporting an error) on failure.
+GDScriptParser::DataType GDScriptAnalyzer::resolve_type_of(GDScriptParser::TypeNode *p_type) {
+	static constexpr const char *expected = R"("TypeOf" expects a variable, constant, parameter or member name, like "TypeOf[my_variable]")";
+	GDScriptParser::ExpressionNode *argument = p_type->type_of_expression;
+	if (argument == nullptr) {
+		return GDScriptParser::DataType(); // Error already reported by the parser.
+	}
+
+	// Only identifiers and attribute chains (`foo`, `foo.bar`, `self.foo`): no calls, operators or literals.
+	const GDScriptParser::ExpressionNode *node = argument;
+	while (true) {
+		if (node->type == GDScriptParser::Node::IDENTIFIER || (node->type == GDScriptParser::Node::SELF && node != argument)) {
+			break;
+		}
+		if (node->type == GDScriptParser::Node::SUBSCRIPT) {
+			const GDScriptParser::SubscriptNode *subscript = static_cast<const GDScriptParser::SubscriptNode *>(node);
+			if (subscript->is_attribute && !subscript->is_optional && subscript->base != nullptr) {
+				node = subscript->base;
+				continue;
+			}
+		}
+		push_error(vformat(R"(%s.)", expected), argument);
+		return GDScriptParser::DataType();
+	}
+
+	// A type annotation doesn't access the value: members can be used in static functions too,
+	// and a local variable without a value yet doesn't give an "unassigned variable" warning.
+	GDScriptParser::VariableNode *unassigned_local = nullptr;
+	if (node->type == GDScriptParser::Node::IDENTIFIER) {
+		const GDScriptParser::IdentifierNode *root = static_cast<const GDScriptParser::IdentifierNode *>(node);
+		if (root->source == GDScriptParser::IdentifierNode::LOCAL_VARIABLE && root->variable_source != nullptr && root->variable_source->assignments == 0) {
+			unassigned_local = root->variable_source;
+			unassigned_local->assignments++;
+		}
+	}
+	const bool previous_static_context = static_context;
+	static_context = false;
+	reduce_expression(argument);
+	static_context = previous_static_context;
+	if (unassigned_local != nullptr) {
+		unassigned_local->assignments--;
+	}
+
+	GDScriptParser::DataType value_type = argument->type_constraint;
+	if (!value_type.is_set() || value_type.kind == GDScriptParser::DataType::UNRESOLVED) {
+		return GDScriptParser::DataType(); // Error already reported.
+	}
+	if (value_type.is_meta_type) {
+		push_error(vformat(R"(%s, but "%s" is a type. Use the type directly.)", expected, type_from_metatype(value_type).to_string()), argument);
+		return GDScriptParser::DataType();
+	}
+
+	const int key_index = get_struct_key_index(argument);
+	if (key_index >= 0) {
+		// Struct key: its declared type (an optional key isn't nullable in the struct type itself).
+		const GDScriptParser::DataType struct_type = static_cast<GDScriptParser::SubscriptNode *>(argument)->base->type_constraint;
+		if (struct_type.is_struct_type() && key_index < struct_type.struct_key_types.size()) {
+			value_type = struct_type.struct_key_types[key_index];
+		}
+	} else if (!value_type.is_hard_type() && !argument->is_constant) {
+		// Untyped variable (`var foo = 1`): its declared type is `Variant`.
+		value_type = GDScriptParser::DataType::get_variant_type();
+	}
+
+	if (value_type.kind == GDScriptParser::DataType::BUILTIN && value_type.builtin_type == Variant::NIL) {
+		push_error(R"("TypeOf" cannot be used on a value of type "null".)", argument);
+		return GDScriptParser::DataType();
+	}
+
+	value_type.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
+	value_type.is_constant = false;
+	value_type.is_read_only = false;
+	value_type.is_meta_type = false;
+	return value_type;
+}
+
 // Collects the return statements of a function body (not of nested lambdas).
 static void collect_return_nodes(const GDScriptParser::SuiteNode *p_suite, LocalVector<const GDScriptParser::ReturnNode *> &r_returns) {
 	if (p_suite == nullptr) {
@@ -1273,6 +1352,16 @@ GDScriptParser::DataType GDScriptAnalyzer::resolve_datatype(GDScriptParser::Type
 			return_type.is_constant = false;
 			return_type.is_read_only = false;
 			result.set_callable_return_type(return_type);
+		}
+		p_type->resolved_type = result;
+		return result;
+	}
+
+	if (p_type->is_type_of) {
+		// `TypeOf[value]`: the type of a variable, constant, parameter, member or struct key.
+		result = resolve_type_of(p_type);
+		if (!result.is_set()) {
+			return bad_type; // Error already reported.
 		}
 		p_type->resolved_type = result;
 		return result;

@@ -1,0 +1,6 @@
+GDTEST_ANALYZER_ERROR
+>> ERROR at line 4: "TypeOf" expects a variable, constant, parameter or member name, like "TypeOf[my_variable]", but "Node" is a type. Use the type directly.
+>> ERROR at line 5: "TypeOf" expects a variable, constant, parameter or member name, like "TypeOf[my_variable]".
+>> ERROR at line 6: "TypeOf" expects a variable, constant, parameter or member name, like "TypeOf[my_variable]".
+>> ERROR at line 9: Cannot assign a value of type int to variable "text" with specified type String.
+>> ERROR at line 10: Key "other" does not exist in struct type "Struct[{ key: String }]".

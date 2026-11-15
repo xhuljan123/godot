@@ -4006,6 +4006,23 @@ GDScriptParser::TypeNode *GDScriptParser::parse_type(bool p_allow_void) {
 		push_multiline(true);
 	}
 
+	if (type_element->name == SNAME("TypeOf") && check(GDScriptTokenizer::Token::BRACKET_OPEN)) {
+		// `TypeOf[value]`: the type of a variable, constant, parameter or member (like `typeof value` in TypeScript).
+		// The argument is parsed as an expression, so code completion suggests identifiers and members.
+		// The analyzer only accepts identifiers and attribute chains.
+		push_multiline(true);
+		advance(); // "[".
+		type->is_type_of = true;
+		type->type_of_expression = parse_expression(false);
+		if (type->type_of_expression == nullptr) {
+			push_error(R"(Expected a variable, constant or member name after "TypeOf[".)");
+		}
+		pop_multiline();
+		consume(GDScriptTokenizer::Token::BRACKET_CLOSE, R"(Expected closing "]" after "TypeOf" argument.)");
+		complete_extents(type);
+		return type;
+	}
+
 	// Utility types: `Partial[StructType]`, `Required[StructType]`, `StructFromClass[ClassType]`, `ExtractExportableVars[ClassType]`, `StructToVariant[StructType]`, `Omit`, `Pick`, `KeysOf[Source]`, `FunctionArgType[function]` and `DictionaryWithKeys[Keys, Value]`.
 	TypeNode::StructModifier struct_modifier = TypeNode::STRUCT_MODIFIER_NONE;
 	if (type_element->name == SNAME("Partial")) {

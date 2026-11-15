@@ -920,6 +920,7 @@ void GDScriptSyntaxHighlighter::_update_cache() {
 	struct_utility_types.insert(SNAME("NestedArray"));
 	struct_utility_types.insert(SNAME("NestedDictionary"));
 	struct_utility_types.insert(SNAME("FunctionArgType"));
+	struct_utility_types.insert(SNAME("TypeOf"));
 
 	/* Reserved words. */
 	const Color keyword_color = EDITOR_GET("text_editor/theme/highlighting/keyword_color");

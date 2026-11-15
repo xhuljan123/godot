@@ -1493,6 +1493,11 @@ public:
 		};
 		LocalVector<StructModifierKey> struct_modifier_excluded_keys;
 
+		// `TypeOf[value]`: the type of a variable, constant, parameter, member or struct key.
+		// The argument is an identifier, optionally followed by attributes (`node.position`, `config.key`).
+		bool is_type_of = false;
+		ExpressionNode *type_of_expression = nullptr;
+
 		// `List["foo", "bar", 1]`: the accepted values (constant expressions).
 		bool is_value_list = false;
 		LocalVector<ExpressionNode *> value_list_values;

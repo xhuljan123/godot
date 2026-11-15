@@ -24,6 +24,7 @@ Table of contents:
   - [NestedArray and NestedDictionary](#nestedarray-and-nesteddictionary)
   - [Typed callables](#typed-callables-callableargsreturn)
   - [FunctionArgType](#functionargtype)
+  - [TypeOf](#typeof)
   - [BoundCallable](#boundcallable)
 - [Syntax](#syntax)
   - [Optional chaining](#optional-chaining-)
@@ -309,6 +310,30 @@ func _ready():
 	run(func(a: String) -> void: pass) # Error: parameter 1 cannot receive "int".
 ```
 
+#### TypeOf
+
+`TypeOf[value]` is the type of a variable, constant, function parameter, class member or struct key (like `typeof value` in TypeScript), so a type can be declared once and reused. The value is a name, optionally followed by members: `foo`, `node.position`, `Other.CONSTANT`, `config.key`. Local variables and parameters of the current function can be used too.
+
+- Variables with an explicit or inferred (`:=`) type give that type; untyped variables (`var foo = 1`) give `Variant`. Constants give the type of their value.
+- Struct keys give their declared type (an optional key `count?: int` gives `int`). A function gives its typed callable (`Callable[String][String]`).
+- Only names and member chains are accepted (no calls, literals or operators). A type name is an error (use the type directly).
+- It can be used anywhere a type is expected: variables, parameters, return types, type aliases, struct keys, `as`/`is`. At runtime it's the resolved type.
+
+```gdscript
+var foo: String = "bar"
+var bar: Struct[{ key: String, count?: int }]
+
+var a: TypeOf[foo] # String
+var b: TypeOf[bar] # Struct[{ key: String, count?: int }]
+var c: TypeOf[bar.key] # String
+type Count = TypeOf[bar.count] # int
+type Wrong = TypeOf[foo.length()] # Error: "TypeOf" expects a variable, constant, parameter or member name.
+
+func _ready():
+	a = 1 # Error: Cannot assign a value of type int to variable "a" with specified type String.
+	var copy: TypeOf[b] = { key = "k" }
+```
+
 #### BoundCallable
 
 `BoundCallable` is the type of the result of [`bind_strict()`](#callablebind_strict): a callable with all its arguments already bound, which can only be called with `call()` (or `call_deferred()`) without arguments. `BoundCallable[ReturnType]` also gives the return type.
@@ -474,7 +499,7 @@ var missing := load_file("res://missing.tscn") # Error: File "res://missing.tscn
 
 ### Editor support
 
-- Syntax highlighting: `type` in type alias declarations uses the keyword color (like `var` and `func`). `Struct`, `Partial`, `Required`, `Omit`, `Pick`, `StructFromClass`, `ExtractExportableVars`, `StructToVariant`, `List`, `KeysOf`, `DictionaryWithKeys`, `NestedArray`, `NestedDictionary` and `FunctionArgType` use the base type color when followed by `[`. `BoundCallable` uses the base type color.
+- Syntax highlighting: `type` in type alias declarations uses the keyword color (like `var` and `func`). `Struct`, `Partial`, `Required`, `Omit`, `Pick`, `StructFromClass`, `ExtractExportableVars`, `StructToVariant`, `List`, `KeysOf`, `DictionaryWithKeys`, `NestedArray`, `NestedDictionary`, `FunctionArgType` and `TypeOf` use the base type color when followed by `[`. `BoundCallable` uses the base type color.
 - Argument hints: `call()`, `call_deferred()` and `bind_strict()` on a callable with a known signature show its argument types.
-- Code completion: type names, struct keys (in literals, after `.`, in `Foo.` types), `List`/`KeysOf` values in assignments and call arguments, members after `?.`.
+- Code completion: type names, struct keys (in literals, after `.`, in `Foo.` types), variables and members inside `TypeOf[...]`, `List`/`KeysOf` values in assignments and call arguments, members after `?.`.
 - Hover tooltips, argument hints and the script documentation show the full types, including the aliased type of type aliases (`Foo (Struct[{ ... }])`).
