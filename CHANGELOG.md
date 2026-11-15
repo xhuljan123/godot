@@ -277,6 +277,30 @@ var stats: Stats = { HEALTH = 10, MANA = 5.5 }
 
 A plain `Dictionary[List[...], ValueType]` only limits which keys are allowed, without requiring all of them.
 
+Keys can be strings or ints, so the values of an enum work too:
+
+```gdscript
+enum Tile { GRASS, WATER }
+var costs: DictionaryWithKeys[ValuesOf[Tile], float] = { Tile.GRASS: 1.0, Tile.WATER: 3.5 }
+var names: DictionaryWithKeys[List[1, 2], String] = { 1: "one", 2: "two" }
+names["1"] # Error: the key 1 is an int, "1" isn't one of the keys.
+```
+
+Indexing a `DictionaryWithKeys` only accepts its keys: a constant key that isn't one of them, a variable whose initial value isn't one of them, or any other typed key (like a `String` variable or parameter, which could hold any value) is an error. Use a constant key, or type the key as a `List` or `KeysOf` of the keys. Untyped values and `for` loop keys are checked at runtime.
+
+```gdscript
+var tile_type_mapping: DictionaryWithKeys[List["1", "2"], int] = { "1": 1, "2": 2 }
+
+func get_tile(key: KeysOf[DictionaryWithKeys[List["1", "2"], int]]) -> int:
+	return tile_type_mapping[key] # OK.
+
+func _ready():
+	var test := "33"
+	tile_type_mapping[test] # Error: Key "33" (the value of "test") does not exist in struct type "...".
+	var name: String = get_name()
+	tile_type_mapping[name] # Error: Cannot use a value of type "String" as a key of "...", which only accepts its keys ("1", "2").
+```
+
 #### NestedArray and NestedDictionary
 
 `NestedArray[...]` and `NestedDictionary[...]` work like `Array` and `Dictionary`, but their element types can be typed collections. `Array` and `Dictionary` are unchanged (`Array[Array[int]]` is still an error).

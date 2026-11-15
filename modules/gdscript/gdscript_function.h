@@ -53,6 +53,8 @@ public:
 	Vector<StringName> struct_keys;
 	Vector<GDScriptDataType> struct_key_types;
 	Vector<bool> struct_key_optional;
+	// The value of each key in the dictionary: a `StringName`, or an `int` (`DictionaryWithKeys[List[0, 1], Type]`).
+	Vector<Variant> struct_key_values;
 
 	// `List["foo", "bar", 1]`: the value must be one of these (`String` and `StringName` are considered equal).
 	// Can be set for any kind: a list with values of different types is a `Variant` (VARIANT kind).
@@ -149,6 +151,7 @@ public:
 				struct_keys == p_other.struct_keys &&
 				struct_key_types == p_other.struct_key_types &&
 				struct_key_optional == p_other.struct_key_optional &&
+				struct_key_values == p_other.struct_key_values &&
 				is_value_list == p_other.is_value_list &&
 				value_list_values == p_other.value_list_values;
 	}
@@ -168,6 +171,7 @@ public:
 		struct_keys = p_other.struct_keys;
 		struct_key_types = p_other.struct_key_types;
 		struct_key_optional = p_other.struct_key_optional;
+		struct_key_values = p_other.struct_key_values;
 		is_value_list = p_other.is_value_list;
 		value_list_values = p_other.value_list_values;
 	}

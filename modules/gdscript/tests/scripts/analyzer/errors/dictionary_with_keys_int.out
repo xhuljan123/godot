@@ -1,0 +1,7 @@
+GDTEST_ANALYZER_ERROR
+>> ERROR at line 1: Key 3 does not exist in struct type "DictionaryWithKeys[List[1, 2], String]".
+>> ERROR at line 1: Missing required key 2 for struct type "DictionaryWithKeys[List[1, 2], String]".
+>> ERROR at line 4: Key 5 does not exist in struct type "DictionaryWithKeys[List[1, 2], String]".
+>> ERROR at line 5: Key "1" does not exist in struct type "DictionaryWithKeys[List[1, 2], String]".
+>> ERROR at line 7: Key 7 (the value of "index") does not exist in struct type "DictionaryWithKeys[List[1, 2], String]".
+>> ERROR at line 8: Cannot assign a value of type "String" to key 2 of type "int".

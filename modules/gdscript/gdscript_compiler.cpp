@@ -210,6 +210,7 @@ GDScriptDataType GDScriptCompiler::_gdtype_from_datatype(const GDScriptParser::D
 			result.struct_keys.push_back(p_datatype.struct_keys[i]);
 			result.struct_key_types.push_back(_gdtype_from_datatype(p_datatype.struct_key_types[i], p_owner, false));
 			result.struct_key_optional.push_back(p_datatype.struct_key_optional[i]);
+			result.struct_key_values.push_back(p_datatype.is_struct_key_int(i) ? p_datatype.get_struct_key_value(i) : Variant(p_datatype.struct_keys[i]));
 		}
 	}
 

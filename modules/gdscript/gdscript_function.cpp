@@ -49,7 +49,7 @@ String GDScriptDataType::validate_struct(const Dictionary &p_dictionary, const S
 	for (int i = 0; i < struct_keys.size(); i++) {
 		const StringName &key = struct_keys[i];
 		const String path = p_path.is_empty() ? String(key) : p_path + "." + String(key);
-		const Variant *value = p_dictionary.getptr(key);
+		const Variant *value = i < struct_key_values.size() ? p_dictionary.getptr(struct_key_values[i]) : p_dictionary.getptr(key);
 		if (value == nullptr) {
 			if (!struct_key_optional[i]) {
 				return vformat(R"(Missing required key "%s".)", path);

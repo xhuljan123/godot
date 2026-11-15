@@ -112,6 +112,9 @@ public:
 		// reading a missing key gives its default value instead of `null`.
 		Vector<bool> struct_key_has_default;
 		Vector<Variant> struct_key_defaults;
+		// The key values, parallel to `struct_keys`: the key name as a `String`, or an `int` for the int keys of
+		// `DictionaryWithKeys[List[0, 1], Type]` (whose name is the number, like "0").
+		Vector<Variant> struct_key_values;
 		// No keys other than the declared ones are accepted from another struct type (structural typing normally allows extra keys).
 		// Used for the `StructRef` constructor and `assign()`, where unknown keys are errors.
 		bool struct_is_exact = false;
@@ -334,17 +337,60 @@ public:
 			callable_return_type.clear();
 		}
 
+		// The value of a key: its name as a `String`, or an `int` key.
+		_FORCE_INLINE_ Variant get_struct_key_value(int p_index) const {
+			if (p_index < struct_key_values.size() && struct_key_values[p_index].get_type() == Variant::INT) {
+				return struct_key_values[p_index];
+			}
+			return String(struct_keys[p_index]);
+		}
+
+		_FORCE_INLINE_ bool is_struct_key_int(int p_index) const {
+			return p_index < struct_key_values.size() && struct_key_values[p_index].get_type() == Variant::INT;
+		}
+
+		_FORCE_INLINE_ bool has_int_struct_keys() const {
+			for (int i = 0; i < struct_key_values.size(); i++) {
+				if (struct_key_values[i].get_type() == Variant::INT) {
+					return true;
+				}
+			}
+			return false;
+		}
+
+		// Index of a string key (int keys are only found with `find_struct_key_value()`).
 		_FORCE_INLINE_ int find_struct_key(const StringName &p_key) const {
 			for (int i = 0; i < struct_keys.size(); i++) {
-				if (struct_keys[i] == p_key) {
+				if (struct_keys[i] == p_key && !is_struct_key_int(i)) {
 					return i;
 				}
 			}
 			return -1;
 		}
 
-		void add_struct_key(const StringName &p_key, const DataType &p_type, bool p_optional, bool p_has_default = false, const Variant &p_default = Variant()) {
+		// Index of the key with this value (a `String`/`StringName` or an `int`), or -1.
+		int find_struct_key_value(const Variant &p_value) const {
+			if (p_value.get_type() == Variant::STRING || p_value.get_type() == Variant::STRING_NAME) {
+				return find_struct_key(p_value.operator StringName());
+			}
+			if (p_value.get_type() == Variant::INT) {
+				for (int i = 0; i < struct_key_values.size(); i++) {
+					if (is_struct_key_int(i) && struct_key_values[i].operator int64_t() == p_value.operator int64_t()) {
+						return i;
+					}
+				}
+			}
+			return -1;
+		}
+
+		// Text of a key for messages: `"name"` or `1`.
+		String get_struct_key_text(int p_index) const {
+			return get_struct_key_value(p_index).get_construct_string();
+		}
+
+		void add_struct_key(const StringName &p_key, const DataType &p_type, bool p_optional, bool p_has_default = false, const Variant &p_default = Variant(), const Variant &p_key_value = Variant()) {
 			is_struct = true;
+			struct_key_values.push_back(p_key_value.get_type() == Variant::INT ? p_key_value : Variant(String(p_key)));
 			struct_keys.push_back(p_key);
 			struct_key_types.push_back(p_type);
 			struct_key_optional.push_back(p_optional);
@@ -378,6 +424,7 @@ public:
 			struct_key_optional.clear();
 			struct_key_has_default.clear();
 			struct_key_defaults.clear();
+			struct_key_values.clear();
 			struct_is_exact = false;
 		}
 
@@ -443,6 +490,7 @@ public:
 			struct_key_optional = p_other.struct_key_optional;
 			struct_key_has_default = p_other.struct_key_has_default;
 			struct_key_defaults = p_other.struct_key_defaults;
+			struct_key_values = p_other.struct_key_values;
 			struct_is_exact = p_other.struct_is_exact;
 			alias_name = p_other.alias_name;
 			is_value_list = p_other.is_value_list;

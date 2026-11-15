@@ -900,8 +900,8 @@ GDScriptParser::DataType GDScriptAnalyzer::resolve_keys_of_type(GDScriptParser::
 				}
 			}
 		} else if (source_type.is_struct_type() && !p_values) {
-			for (const StringName &key : source_type.struct_keys) {
-				values.push_back(String(key));
+			for (int i = 0; i < source_type.struct_keys.size(); i++) {
+				values.push_back(source_type.get_struct_key_value(i));
 			}
 		} else if (source_type.is_value_list_type()) {
 			values = source_type.value_list_values;
@@ -1058,6 +1058,41 @@ GDScriptParser::DataType GDScriptAnalyzer::resolve_type_of(GDScriptParser::TypeN
 	value_type.is_read_only = false;
 	value_type.is_meta_type = false;
 	return value_type;
+}
+
+// `DictionaryWithKeys[...]` only accepts its own keys. A constant index is checked like any struct key, and a `List`/`KeysOf`
+// index must only contain its keys. Any other typed index (`var key := "33"`, a `String` parameter) could be any value,
+// so it's an error. A variable whose initial value is a constant that isn't a key reports that value.
+// Returns true if an error was reported.
+bool GDScriptAnalyzer::report_invalid_dictionary_with_keys_index(GDScriptParser::SubscriptNode *p_subscript, const GDScriptParser::DataType &p_base_type) {
+	GDScriptParser::ExpressionNode *index = p_subscript->index;
+	if (index == nullptr || p_subscript->is_optional) {
+		return false; // `value?.[key]` gives `null` for an unknown key.
+	}
+	if (index->type == GDScriptParser::Node::IDENTIFIER) {
+		const GDScriptParser::IdentifierNode *identifier = static_cast<const GDScriptParser::IdentifierNode *>(index);
+		if (identifier->source == GDScriptParser::IdentifierNode::LOCAL_ITERATOR) {
+			return false; // `for key in dictionary`: the keys of a dictionary, checked at runtime.
+		}
+		const bool is_variable = identifier->source == GDScriptParser::IdentifierNode::LOCAL_VARIABLE || identifier->source == GDScriptParser::IdentifierNode::MEMBER_VARIABLE || identifier->source == GDScriptParser::IdentifierNode::STATIC_VARIABLE;
+		if (is_variable && identifier->variable_source != nullptr && identifier->variable_source->initializer != nullptr && identifier->variable_source->initializer->is_constant) {
+			const Variant initial_value = identifier->variable_source->initializer->reduced_value;
+			if (p_base_type.find_struct_key_value(initial_value) < 0) {
+				push_error(vformat(R"(Key %s (the value of "%s") does not exist in struct type "%s".)", initial_value.get_construct_string(), identifier->name, p_base_type.to_string()), index);
+				return true;
+			}
+		}
+	}
+	const GDScriptParser::DataType &index_type = index->type_constraint;
+	if (!index_type.is_set() || !index_type.is_hard_type() || index_type.is_variant()) {
+		return false; // Untyped: checked at runtime.
+	}
+	String keys;
+	for (int i = 0; i < p_base_type.struct_keys.size(); i++) {
+		keys += (i > 0 ? ", " : "") + p_base_type.get_struct_key_text(i);
+	}
+	push_error(vformat(R"(Cannot use a value of type "%s" as a key of "%s", which only accepts its keys (%s). Use a constant key, or type the key as "List[%s]" or "KeysOf[...]".)", index_type.to_string(), p_base_type.to_string(), keys, keys), index);
+	return true;
 }
 
 // Collects the return statements of a function body (not of nested lambdas).
@@ -1303,7 +1338,7 @@ GDScriptParser::DataType GDScriptAnalyzer::resolve_datatype(GDScriptParser::Type
 					continue;
 				}
 				for (int i = 0; i < spread_type.struct_keys.size(); i++) {
-					const int existing = result.find_struct_key(spread_type.struct_keys[i]);
+					const int existing = result.find_struct_key_value(spread_type.get_struct_key_value(i));
 					Variant default_value;
 					const bool has_default = spread_type.get_struct_key_default(i, default_value);
 					if (existing >= 0) {
@@ -1311,7 +1346,7 @@ GDScriptParser::DataType GDScriptAnalyzer::resolve_datatype(GDScriptParser::Type
 						result.struct_key_optional.write[existing] = spread_type.struct_key_optional[i];
 						result.set_struct_key_default(existing, has_default, default_value);
 					} else {
-						result.add_struct_key(spread_type.struct_keys[i], spread_type.struct_key_types[i], spread_type.struct_key_optional[i], has_default, default_value);
+						result.add_struct_key(spread_type.struct_keys[i], spread_type.struct_key_types[i], spread_type.struct_key_optional[i], has_default, default_value, spread_type.get_struct_key_value(i));
 					}
 				}
 				continue;
@@ -1463,8 +1498,16 @@ GDScriptParser::DataType GDScriptAnalyzer::resolve_datatype(GDScriptParser::Type
 			result.builtin_type = Variant::DICTIONARY;
 			result.is_struct = true;
 			for (const Variant &key : keys) {
+				if (key.get_type() == Variant::INT) {
+					// Int key: its name is the number, but only an int value matches it.
+					if (result.find_struct_key_value(key) >= 0) {
+						continue;
+					}
+					result.add_struct_key(StringName(String::num_int64(key.operator int64_t())), value_type, false, false, Variant(), key);
+					continue;
+				}
 				if (key.get_type() != Variant::STRING && key.get_type() != Variant::STRING_NAME) {
-					push_error(vformat(R"("DictionaryWithKeys" only supports string keys, but %s is "%s".)", key.get_construct_string(), Variant::get_type_name(key.get_type())), argument);
+					push_error(vformat(R"("DictionaryWithKeys" only supports string and int keys, but %s is "%s".)", key.get_construct_string(), Variant::get_type_name(key.get_type())), argument);
 					return bad_type;
 				}
 				result.add_struct_key(StringName(key.operator String()), value_type, false);
@@ -1524,7 +1567,7 @@ GDScriptParser::DataType GDScriptAnalyzer::resolve_datatype(GDScriptParser::Type
 				if (!picked.has(argument_type.struct_keys[i])) {
 					continue;
 				}
-				result.add_struct_key(argument_type.struct_keys[i], argument_type.struct_key_types[i], argument_type.struct_key_optional[i], argument_type.struct_key_has_default[i], argument_type.struct_key_defaults[i]);
+				result.add_struct_key(argument_type.struct_keys[i], argument_type.struct_key_types[i], argument_type.struct_key_optional[i], argument_type.struct_key_has_default[i], argument_type.struct_key_defaults[i], argument_type.get_struct_key_value(i));
 			}
 		} else if (p_type->struct_modifier == GDScriptParser::TypeNode::STRUCT_MODIFIER_OMIT) {
 			// `Omit[StructType, { key, other }]`: the struct type without the listed keys (like `Omit<T, K>` in TypeScript).
@@ -1554,7 +1597,7 @@ GDScriptParser::DataType GDScriptAnalyzer::resolve_datatype(GDScriptParser::Type
 				if (omitted.has(argument_type.struct_keys[i])) {
 					continue;
 				}
-				result.add_struct_key(argument_type.struct_keys[i], argument_type.struct_key_types[i], argument_type.struct_key_optional[i], argument_type.struct_key_has_default[i], argument_type.struct_key_defaults[i]);
+				result.add_struct_key(argument_type.struct_keys[i], argument_type.struct_key_types[i], argument_type.struct_key_optional[i], argument_type.struct_key_has_default[i], argument_type.struct_key_defaults[i], argument_type.get_struct_key_value(i));
 			}
 		} else if (p_type->struct_modifier == GDScriptParser::TypeNode::STRUCT_MODIFIER_PARTIAL || p_type->struct_modifier == GDScriptParser::TypeNode::STRUCT_MODIFIER_REQUIRED) {
 			// `Partial[StructType]`: same keys, all optional (like `Partial<T>` in TypeScript).
@@ -4008,6 +4051,30 @@ void GDScriptAnalyzer::update_struct_literal(GDScriptParser::DictionaryNode *p_d
 			changed_constant_value = true;
 		} else if (key_node->is_constant && (key_node->reduced_value.get_type() == Variant::STRING || key_node->reduced_value.get_type() == Variant::STRING_NAME)) {
 			key = key_node->reduced_value.operator StringName();
+		} else if (key_node->is_constant && key_node->reduced_value.get_type() == Variant::INT && p_struct_type.has_int_struct_keys()) {
+			// Int key of `DictionaryWithKeys[List[0, 1], Type]`.
+			const int int_key_index = p_struct_type.find_struct_key_value(key_node->reduced_value);
+			if (int_key_index < 0) {
+				push_error(vformat(R"(Key %s does not exist in struct type "%s".)", key_node->reduced_value.get_construct_string(), p_struct_type.to_string()), key_node);
+				continue;
+			}
+			key = p_struct_type.struct_keys[int_key_index];
+			if (found_keys.has(key)) {
+				continue;
+			}
+			found_keys[key] = key_node;
+			const GDScriptParser::DataType &int_key_expected_type = p_struct_type.struct_key_types[int_key_index];
+			update_literal_for_expected_type(value_node, int_key_expected_type);
+			const GDScriptParser::DataType &int_key_actual_type = value_node->type_constraint;
+			if (int_key_expected_type.is_variant()) {
+				continue;
+			}
+			if (!int_key_actual_type.is_set() || int_key_actual_type.has_no_type() || int_key_actual_type.is_variant() || !int_key_actual_type.is_hard_type()) {
+				mark_node_unsafe(value_node);
+			} else if (!is_type_compatible(int_key_expected_type, int_key_actual_type, true, value_node)) {
+				push_error(vformat(R"(Cannot assign a value of type "%s" to key %s of type "%s".)", int_key_actual_type.to_string(), p_struct_type.get_struct_key_text(int_key_index), int_key_expected_type.to_string()), value_node);
+			}
+			continue;
 		} else {
 			push_error(vformat(R"(Keys of a literal for struct type "%s" must be names or constant strings.)", p_struct_type.to_string()), key_node);
 			continue;
@@ -4059,7 +4126,7 @@ void GDScriptAnalyzer::update_struct_literal(GDScriptParser::DictionaryNode *p_d
 
 	for (int i = 0; i < p_struct_type.struct_keys.size(); i++) {
 		if (!p_struct_type.struct_key_optional[i] && !found_keys.has(p_struct_type.struct_keys[i])) {
-			push_error(vformat(R"(Missing required key "%s" for struct type "%s".)", p_struct_type.struct_keys[i], p_struct_type.to_string()), p_dictionary);
+			push_error(vformat(R"(Missing required key %s for struct type "%s".)", p_struct_type.get_struct_key_text(i), p_struct_type.to_string()), p_dictionary);
 		}
 	}
 
@@ -4314,7 +4381,7 @@ GDScriptParser::DataType GDScriptAnalyzer::reduce_merge_objects_call(GDScriptPar
 		key_type.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
 		Variant default_value;
 		const bool has_default = defaults.get_struct_key_default(i, default_value);
-		result.add_struct_key(defaults.struct_keys[i], key_type, defaults.struct_key_optional[i], has_default, default_value);
+		result.add_struct_key(defaults.struct_keys[i], key_type, defaults.struct_key_optional[i], has_default, default_value, defaults.get_struct_key_value(i));
 	}
 	for (int i = 0; i < overrides.struct_keys.size(); i++) {
 		const StringName &key = overrides.struct_keys[i];
@@ -4775,7 +4842,7 @@ bool GDScriptAnalyzer::is_struct_compatible(const GDScriptParser::DataType &p_ta
 	for (int i = 0; i < p_target.struct_keys.size(); i++) {
 		const StringName &key = p_target.struct_keys[i];
 		const bool target_optional = p_target.struct_key_optional[i];
-		const int source_index = p_source.find_struct_key(key);
+		const int source_index = p_source.find_struct_key_value(p_target.get_struct_key_value(i));
 		if (source_index < 0) {
 			if (!target_optional) {
 				if (r_reason) {
@@ -4802,7 +4869,7 @@ bool GDScriptAnalyzer::is_struct_compatible(const GDScriptParser::DataType &p_ta
 	}
 	if (p_target.struct_is_exact) {
 		for (int i = 0; i < p_source.struct_keys.size(); i++) {
-			if (p_target.find_struct_key(p_source.struct_keys[i]) < 0) {
+			if (p_target.find_struct_key_value(p_source.get_struct_key_value(i)) < 0) {
 				if (r_reason) {
 					*r_reason = vformat(R"(Key "%s" does not exist in the target type.)", p_source.struct_keys[i]);
 				}
@@ -7230,7 +7297,18 @@ void GDScriptAnalyzer::reduce_subscript(GDScriptParser::SubscriptNode *p_subscri
 					}
 					result_type.kind = GDScriptParser::DataType::VARIANT;
 				}
-			} else if (base_type.is_struct_type() && index_type.is_hard_type() && index_type.is_value_list_type() && index_type.kind == GDScriptParser::DataType::BUILTIN && index_type.builtin_type == Variant::STRING) {
+			} else if (base_type.is_struct_type() && base_type.has_int_struct_keys() && p_subscript->index->is_constant && p_subscript->index->reduced_value.get_type() == Variant::INT) {
+				// Int key access of `DictionaryWithKeys[List[0, 1], Type]` with a constant key (`value[0]`).
+				const int key_index = base_type.find_struct_key_value(p_subscript->index->reduced_value);
+				if (key_index >= 0) {
+					result_type = get_struct_key_read_type(base_type, key_index);
+				} else {
+					if (!p_subscript->is_optional) {
+						push_error(vformat(R"(Key %s does not exist in struct type "%s".)", p_subscript->index->reduced_value.get_construct_string(), base_type.to_string()), p_subscript->index);
+					}
+					result_type.kind = GDScriptParser::DataType::VARIANT;
+				}
+			} else if (base_type.is_struct_type() && index_type.is_hard_type() && index_type.is_value_list_type() && ((index_type.kind == GDScriptParser::DataType::BUILTIN && index_type.builtin_type == Variant::STRING) || base_type.has_int_struct_keys())) {
 				// Struct access with a `KeysOf`/`List` key of strings (`value[key]`). Every accepted key must exist in the struct.
 				// If all of them have the same type, the result has it as a weak type: known for completion, but the
 				// access stays a regular dictionary access, checked at runtime when assigned to a typed variable.
@@ -7238,10 +7316,10 @@ void GDScriptAnalyzer::reduce_subscript(GDScriptParser::SubscriptNode *p_subscri
 				bool has_common_type = true;
 				bool all_keys_exist = true;
 				for (int i = 0; i < index_type.value_list_values.size(); i++) {
-					const StringName key = index_type.value_list_values[i].operator String();
-					const int key_index = base_type.find_struct_key(key);
+					const Variant &key = index_type.value_list_values[i];
+					const int key_index = base_type.find_struct_key_value(key);
 					if (key_index < 0) {
-						push_error(vformat(R"(Key "%s" of "%s" does not exist in struct type "%s".)", key, index_type.to_string(), base_type.to_string()), p_subscript->index);
+						push_error(vformat(R"(Key %s of "%s" does not exist in struct type "%s".)", key.get_construct_string(), index_type.to_string(), base_type.to_string()), p_subscript->index);
 						all_keys_exist = false;
 						break;
 					}
@@ -7258,6 +7336,9 @@ void GDScriptAnalyzer::reduce_subscript(GDScriptParser::SubscriptNode *p_subscri
 				} else {
 					result_type.kind = GDScriptParser::DataType::VARIANT;
 				}
+			} else if (base_type.is_struct_type() && !base_type.dictionary_with_keys_source.is_empty() && report_invalid_dictionary_with_keys_index(p_subscript, base_type)) {
+				// `DictionaryWithKeys[...]` indexed with a value that isn't one of its keys (error already reported).
+				result_type.kind = GDScriptParser::DataType::VARIANT;
 			} else {
 				if (base_type.kind == GDScriptParser::DataType::BUILTIN && !index_type.is_variant()) {
 					// Check if indexing is valid.
