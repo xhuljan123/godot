@@ -20,6 +20,7 @@ Table of contents:
   - [StructToVariant](#structtovariant)
   - [List](#list)
   - [KeysOf](#keysof)
+  - [ValuesOf](#valuesof)
   - [DictionaryWithKeys](#dictionarywithkeys)
   - [NestedArray and NestedDictionary](#nestedarray-and-nesteddictionary)
   - [Typed callables](#typed-callables-callableargsreturn)
@@ -237,6 +238,26 @@ func axis_value(point: Point, axis: KeysOf[Point]) -> float:
 ```
 
 Native enums work too (`KeysOf[Node.ProcessMode]`). Using a key of a `KeysOf` type that doesn't exist in the struct being indexed is an error.
+
+#### ValuesOf
+
+`ValuesOf[Source]` creates a `List` from the values of an enum, the values of a constant dictionary, or the elements of a constant array (duplicates are removed). It's the counterpart of [`KeysOf`](#keysof).
+
+```gdscript
+enum Foo { KEY_1, KEY_2 }
+var test = { key_1 = 1, key_2 = 2 }
+const BAR = { key_1 = 1, key_2 = ["test"] }
+
+type BarType1 = ValuesOf[Foo] # List[0, 1]
+type BarType2 = ValuesOf[test] # List[1, 2]
+type BarType3 = ValuesOf[BAR] # List[1, ["test"]]
+
+var value: BarType1 = 2 # Error: Expected one of: 0, 1.
+```
+
+- A variable (member or local) can be used when it's initialized with a constant dictionary or array literal: its initial value is used, so later changes to the variable don't change the type. `KeysOf` accepts such variables too.
+- Struct types have no values, so `ValuesOf[StructType]` is an error (use [`TypeOf`](#typeof) on a struct key for its type). Objects can't be values of a `List`.
+- Native enums work too (`ValuesOf[Node.ProcessMode]`).
 
 #### DictionaryWithKeys
 
@@ -499,7 +520,7 @@ var missing := load_file("res://missing.tscn") # Error: File "res://missing.tscn
 
 ### Editor support
 
-- Syntax highlighting: `type` in type alias declarations uses the keyword color (like `var` and `func`). `Struct`, `Partial`, `Required`, `Omit`, `Pick`, `StructFromClass`, `ExtractExportableVars`, `StructToVariant`, `List`, `KeysOf`, `DictionaryWithKeys`, `NestedArray`, `NestedDictionary`, `FunctionArgType` and `TypeOf` use the base type color when followed by `[`. `BoundCallable` uses the base type color.
+- Syntax highlighting: `type` in type alias declarations uses the keyword color (like `var` and `func`). `Struct`, `Partial`, `Required`, `Omit`, `Pick`, `StructFromClass`, `ExtractExportableVars`, `StructToVariant`, `List`, `KeysOf`, `ValuesOf`, `DictionaryWithKeys`, `NestedArray`, `NestedDictionary`, `FunctionArgType` and `TypeOf` use the base type color when followed by `[`. `BoundCallable` uses the base type color.
 - Argument hints: `call()`, `call_deferred()` and `bind_strict()` on a callable with a known signature show its argument types.
-- Code completion: type names, struct keys (in literals, after `.`, in `Foo.` types), variables and members inside `TypeOf[...]`, `List`/`KeysOf` values in assignments and call arguments, members after `?.`.
+- Code completion: type names, struct keys (in literals, after `.`, in `Foo.` types), variables and members inside `TypeOf[...]`, `List`/`KeysOf`/`ValuesOf` values in assignments and call arguments, members after `?.`.
 - Hover tooltips, argument hints and the script documentation show the full types, including the aliased type of type aliases (`Foo (Struct[{ ... }])`).

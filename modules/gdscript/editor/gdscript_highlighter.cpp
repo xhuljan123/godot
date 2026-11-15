@@ -916,6 +916,7 @@ void GDScriptSyntaxHighlighter::_update_cache() {
 	struct_utility_types.insert(SNAME("Pick"));
 	struct_utility_types.insert(SNAME("List"));
 	struct_utility_types.insert(SNAME("KeysOf"));
+	struct_utility_types.insert(SNAME("ValuesOf"));
 	struct_utility_types.insert(SNAME("DictionaryWithKeys"));
 	struct_utility_types.insert(SNAME("NestedArray"));
 	struct_utility_types.insert(SNAME("NestedDictionary"));

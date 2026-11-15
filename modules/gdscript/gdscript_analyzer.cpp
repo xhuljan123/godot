@@ -800,9 +800,13 @@ GDScriptParser::DataType GDScriptAnalyzer::make_value_list_type(const Vector<Var
 
 // `KeysOf[Source]`: a `List[...]` with the names of an enum (`KeysOf[MyEnum]`), the keys of a struct type (`KeysOf[MyStruct]`,
 // including optional keys), or the keys of a constant dictionary (`KeysOf[MY_CONSTANT]`, also the elements of a constant array).
+// With `p_values` it's `ValuesOf[Source]`: a `List[...]` with the values of an enum (`ValuesOf[MyEnum]`), or the values of a constant
+// dictionary or the elements of a constant array (`ValuesOf[MY_CONSTANT]`).
+// Both also accept a variable initialized with a constant dictionary or array literal (`var foo = { a = 1 }`): its initial value is used.
 // Returns an unset type (after reporting an error) on failure.
-GDScriptParser::DataType GDScriptAnalyzer::resolve_keys_of_type(GDScriptParser::TypeNode *p_type) {
-	static constexpr const char *expected = R"("KeysOf" expects an enum, a struct type or a constant dictionary)";
+GDScriptParser::DataType GDScriptAnalyzer::resolve_keys_of_type(GDScriptParser::TypeNode *p_type, bool p_values) {
+	const char *name = p_values ? "ValuesOf" : "KeysOf";
+	const String expected = p_values ? String(R"("ValuesOf" expects an enum, a constant dictionary or array, or a variable initialized with one)") : String(R"("KeysOf" expects an enum, a struct type or a constant dictionary)");
 	GDScriptParser::TypeNode *argument = p_type->get_container_type_or_null(0);
 	if (argument == nullptr) {
 		return GDScriptParser::DataType(); // Error already reported by the parser.
@@ -818,6 +822,7 @@ GDScriptParser::DataType GDScriptAnalyzer::resolve_keys_of_type(GDScriptParser::
 		// A name (`MyEnum`, `MY_CONSTANT`, `Other.MyEnum`, `Other.MY_CONSTANT`): can be a constant value, not only a type.
 		GDScriptParser::IdentifierNode *identifier = argument->type_chain[0];
 		reduce_identifier(identifier, true);
+		GDScriptParser::IdentifierNode *last_identifier = identifier;
 		GDScriptParser::DataType name_type = identifier->type_constraint;
 		bool is_constant = identifier->is_constant;
 		Variant value = identifier->reduced_value;
@@ -831,6 +836,7 @@ GDScriptParser::DataType GDScriptAnalyzer::resolve_keys_of_type(GDScriptParser::
 			reduce_identifier_from_base(member, &base);
 			source_name += "." + String(member->name);
 			name_type = member->type_constraint;
+			last_identifier = member;
 			is_constant = member->is_constant;
 			value = member->reduced_value;
 			if (!name_type.is_set() || name_type.kind == GDScriptParser::DataType::UNRESOLVED) {
@@ -841,13 +847,30 @@ GDScriptParser::DataType GDScriptAnalyzer::resolve_keys_of_type(GDScriptParser::
 		if (!name_type.is_set() || name_type.kind == GDScriptParser::DataType::UNRESOLVED) {
 			return GDScriptParser::DataType(); // Error already reported.
 		}
+		if (!is_constant && !name_type.is_meta_type && last_identifier->variable_source != nullptr && (last_identifier->source == GDScriptParser::IdentifierNode::MEMBER_VARIABLE || last_identifier->source == GDScriptParser::IdentifierNode::LOCAL_VARIABLE || last_identifier->source == GDScriptParser::IdentifierNode::STATIC_VARIABLE)) {
+			// A variable initialized with a constant dictionary or array literal: use its initial value.
+			GDScriptParser::ExpressionNode *initializer = last_identifier->variable_source->initializer;
+			if (initializer != nullptr && (initializer->type == GDScriptParser::Node::DICTIONARY || initializer->type == GDScriptParser::Node::ARRAY)) {
+				bool is_reduced = initializer->is_constant;
+				Variant initial_value = initializer->reduced_value;
+				if (!is_reduced) {
+					constant_required_depth++;
+					initial_value = make_expression_reduced_value(initializer, is_reduced);
+					constant_required_depth--;
+				}
+				if (is_reduced) {
+					is_constant = true;
+					value = initial_value;
+				}
+			}
+		}
 		if (name_type.is_meta_type) {
 			source_type = type_from_metatype(name_type);
 			has_source_type = true;
 		} else if (is_constant && value.get_type() == Variant::DICTIONARY) {
 			const Dictionary dictionary = value;
 			for (const KeyValue<Variant, Variant> &E : dictionary) {
-				values.push_back(E.key);
+				values.push_back(p_values ? E.value : E.key);
 			}
 		} else if (is_constant && value.get_type() == Variant::ARRAY) {
 			const Array array = value;
@@ -870,9 +893,13 @@ GDScriptParser::DataType GDScriptAnalyzer::resolve_keys_of_type(GDScriptParser::
 	if (has_source_type) {
 		if (source_type.kind == GDScriptParser::DataType::ENUM) {
 			for (const KeyValue<StringName, int64_t> &E : source_type.enum_values) {
-				values.push_back(String(E.key));
+				if (p_values) {
+					values.push_back(E.value);
+				} else {
+					values.push_back(String(E.key));
+				}
 			}
-		} else if (source_type.is_struct_type()) {
+		} else if (source_type.is_struct_type() && !p_values) {
 			for (const StringName &key : source_type.struct_keys) {
 				values.push_back(String(key));
 			}
@@ -887,7 +914,7 @@ GDScriptParser::DataType GDScriptAnalyzer::resolve_keys_of_type(GDScriptParser::
 	Vector<Variant> unique_values;
 	for (const Variant &value : values) {
 		if (value.get_type() == Variant::OBJECT) {
-			push_error(vformat(R"("KeysOf" cannot use "%s" because it contains objects.)", source_name), argument);
+			push_error(vformat(R"("%s" cannot use "%s" because it contains objects.)", name, source_name), argument);
 			return GDScriptParser::DataType();
 		}
 		const Variant normalized = value.get_type() == Variant::STRING_NAME ? Variant(value.operator String()) : value;
@@ -896,7 +923,7 @@ GDScriptParser::DataType GDScriptAnalyzer::resolve_keys_of_type(GDScriptParser::
 		}
 	}
 	if (unique_values.is_empty()) {
-		push_error(vformat(R"("KeysOf" needs at least one value, but "%s" has none.)", source_name), argument);
+		push_error(vformat(R"("%s" needs at least one value, but "%s" has none.)", name, source_name), argument);
 		return GDScriptParser::DataType();
 	}
 	return make_value_list_type(unique_values);
@@ -1370,6 +1397,16 @@ GDScriptParser::DataType GDScriptAnalyzer::resolve_datatype(GDScriptParser::Type
 	if (p_type->struct_modifier == GDScriptParser::TypeNode::STRUCT_MODIFIER_FUNCTION_ARG_TYPE) {
 		// `FunctionArgType[function]`: a typed callable with the argument types of the function.
 		result = resolve_function_arg_type(p_type);
+		if (!result.is_set()) {
+			return bad_type; // Error already reported.
+		}
+		p_type->resolved_type = result;
+		return result;
+	}
+
+	if (p_type->struct_modifier == GDScriptParser::TypeNode::STRUCT_MODIFIER_VALUES_OF) {
+		// `ValuesOf[Source]`: a `List[...]` of the values of an enum, or of a constant dictionary or array.
+		result = resolve_keys_of_type(p_type, true);
 		if (!result.is_set()) {
 			return bad_type; // Error already reported.
 		}

@@ -84,7 +84,7 @@ class GDScriptAnalyzer {
 	// `List[...]`, `KeysOf[...]` and `NestedArray[...]`/`NestedDictionary[...]`.
 	bool reduce_value_list_value(GDScriptParser::ExpressionNode *p_value, Variant &r_value);
 	static GDScriptParser::DataType make_value_list_type(const Vector<Variant> &p_values);
-	GDScriptParser::DataType resolve_keys_of_type(GDScriptParser::TypeNode *p_type);
+	GDScriptParser::DataType resolve_keys_of_type(GDScriptParser::TypeNode *p_type, bool p_values = false);
 	GDScriptParser::DataType resolve_function_arg_type(GDScriptParser::TypeNode *p_type);
 	GDScriptParser::DataType resolve_type_of(GDScriptParser::TypeNode *p_type);
 	GDScriptParser::DataType infer_function_type(GDScriptParser::ExpressionNode *p_function);

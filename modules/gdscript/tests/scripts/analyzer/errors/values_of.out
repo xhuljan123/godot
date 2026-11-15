@@ -1,0 +1,4 @@
+GDTEST_ANALYZER_ERROR
+>> ERROR at line 3: "ValuesOf" expects an enum, a constant dictionary or array, or a variable initialized with one, but got "Struct[{ a: int }]".
+>> ERROR at line 5: "ValuesOf" expects an enum, a constant dictionary or array, or a variable initialized with one, but "computed" is a value of type "Array".
+>> ERROR at line 8: Cannot assign 2 as "List[0, 1]". Expected one of: 0, 1.
