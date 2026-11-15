@@ -1632,6 +1632,7 @@ public:
 		GDScriptParser *parser = nullptr;
 		CompletionCall call;
 		DictionaryNode *dictionary_key_of = nullptr; // Set when completing a dictionary literal key (for struct keys).
+		bool is_type_of_argument = false; // Completing the argument of `TypeOf[...]`: instance members can be used anywhere.
 	};
 
 private:

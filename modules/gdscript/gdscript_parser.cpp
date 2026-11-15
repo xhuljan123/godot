@@ -4013,7 +4013,11 @@ GDScriptParser::TypeNode *GDScriptParser::parse_type(bool p_allow_void) {
 		push_multiline(true);
 		advance(); // "[".
 		type->is_type_of = true;
+		const bool had_completion_context = completion_context.type != COMPLETION_NONE;
 		type->type_of_expression = parse_expression(false);
+		if (!had_completion_context && completion_context.type != COMPLETION_NONE) {
+			completion_context.is_type_of_argument = true;
+		}
 		if (type->type_of_expression == nullptr) {
 			push_error(R"(Expected a variable, constant or member name after "TypeOf[".)");
 		}

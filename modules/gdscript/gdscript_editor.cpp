@@ -1780,7 +1780,9 @@ static void _find_identifiers(const GDScriptParser::CompletionContext &p_context
 	}
 
 	if (p_context.current_class) {
-		_find_identifiers_in_class(p_context.current_class, p_only_functions, false, (!p_context.current_function || p_context.current_function->is_static), false, p_add_braces, r_result, p_recursion_depth);
+		// In `TypeOf[...]`, instance members can be used even outside of non-static functions (only their type is used).
+		const bool only_static = !p_context.is_type_of_argument && (!p_context.current_function || p_context.current_function->is_static);
+		_find_identifiers_in_class(p_context.current_class, p_only_functions, false, only_static, false, p_add_braces, r_result, p_recursion_depth);
 	}
 
 	List<StringName> functions;
