@@ -3,6 +3,6 @@ class Foo extends StructRef:
 	var bar: bool
 
 func test():
-	var data: Dictionary = { "foo": "not an int" }
+	var data: Dictionary = { "foo": "not an int", "bar": true }
 	var foo = Foo.new(data)
 	print(foo)

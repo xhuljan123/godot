@@ -166,9 +166,9 @@ StringName GDScript::_get_missing_struct_ref_variable(const Dictionary &p_data) 
 		chain.push_back(scr);
 	}
 	for (int i = (int)chain.size() - 1; i >= 0; i--) {
-		for (const StringName &name : chain[i]->required_members) {
-			if (!p_data.has(String(name)) && !p_data.has(name)) {
-				return name;
+		for (const StringName &variable_name : chain[i]->required_members) {
+			if (!p_data.has(String(variable_name)) && !p_data.has(variable_name)) {
+				return variable_name;
 			}
 		}
 	}
