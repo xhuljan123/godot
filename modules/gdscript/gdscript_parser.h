@@ -156,6 +156,8 @@ public:
 		// Type of a parameter at a call site (see `GDScriptAnalyzer::apply_infer_parameter_types()`): per container element type,
 		// the index of the parameter whose argument gives that element type (`Array[Infer[a]]`), or -1.
 		Vector<int> infer_element_parameter_indices;
+		// Type of a parameter at a call site whose type has `Infer` nested deeper: resolved again with the arguments.
+		const ParameterNode *infer_template_parameter = nullptr;
 
 		enum Kind {
 			BUILTIN,
@@ -515,6 +517,7 @@ public:
 			infer_parameter_index = p_other.infer_parameter_index;
 			infer_parameter_name = p_other.infer_parameter_name;
 			infer_element_parameter_indices = p_other.infer_element_parameter_indices;
+			infer_template_parameter = p_other.infer_template_parameter;
 		}
 
 		DataType() = default;
@@ -1291,8 +1294,13 @@ public:
 		// function, the parameter is a fully untyped container: the argument has the inferred element types at runtime, and typed
 		// containers only accept the exact same element types.
 		DataType infer_call_site_type;
+		// `d: DictionaryWithKeys[KeysOf[Infer[a]], int]`: `Infer` nested deeper (in utility types, struct keys, ...). The type is
+		// resolved again at each call with the argument types (see `GDScriptAnalyzer::resolve_infer_parameter_template()`).
+		TypeNode *infer_template = nullptr;
+		ClassNode *infer_template_class = nullptr; // Where the type is resolved (the class of the function).
+		Vector<int> infer_template_parameters; // Parameters it refers to.
 
-		_FORCE_INLINE_ bool has_infer_type() const { return infer_parameter_index >= 0 || !infer_element_parameter_indices.is_empty(); }
+		_FORCE_INLINE_ bool has_infer_type() const { return infer_parameter_index >= 0 || !infer_element_parameter_indices.is_empty() || infer_template != nullptr; }
 
 		ParameterNode() {
 			type = PARAMETER;
@@ -1578,6 +1586,11 @@ public:
 		// from the argument passed for the parameter (an enum gives its value type, a dictionary literal a struct type).
 		bool is_infer = false;
 		ExpressionNode *infer_expression = nullptr;
+		// Root of a parameter type with `Infer[param]` nested in it (`DictionaryWithKeys[KeysOf[Infer[a]], int]`): inside the
+		// function, it's resolved as `infer_erased_type` (a plain `Dictionary`, ...); at each call, it's resolved again with the
+		// argument types (see `GDScriptAnalyzer::resolve_infer_parameter_template()`).
+		bool is_infer_template = false;
+		DataType infer_erased_type;
 		// In a parameter type: the index of the parameter it refers to, once validated by the analyzer. -1 otherwise.
 		int infer_parameter_index = -1;
 
@@ -2047,6 +2060,7 @@ public:
 	static Variant::Type get_builtin_type(const StringName &p_type); // Excluding `Variant::NIL` and `Variant::OBJECT`.
 	// `b: Infer[a]` / `b: Array[Infer[a]]` as written, for editor hints and docs. Empty if the parameter type doesn't use `Infer`.
 	static String get_infer_parameter_type_string(const FunctionNode *p_function, const ParameterNode *p_parameter);
+	static String type_node_to_string(const TypeNode *p_type);
 
 	CompletionContext get_completion_context() const { return completion_context; }
 	void get_annotation_list(List<MethodInfo> *r_annotations) const;

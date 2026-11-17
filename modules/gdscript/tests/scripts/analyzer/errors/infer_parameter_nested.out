@@ -1,0 +1,6 @@
+GDTEST_ANALYZER_ERROR
+>> ERROR at line 6: "Infer" in the type of parameter "map" can only refer to an earlier parameter, but "source" comes after it.
+>> ERROR at line 10: Missing required key 1 for struct type "DictionaryWithKeys[List[0, 1], int]".
+>> ERROR at line 11: Cannot assign a value of type "String" to key 1 of type "int".
+>> ERROR at line 12: Key 7 does not exist in struct type "DictionaryWithKeys[List[0, 1], int]".
+>> ERROR at line 14: Cannot type the argument for parameter "map" (DictionaryWithKeys[ValuesOf[Infer[_enum]], int]) from the other arguments: "ValuesOf" expects an enum, a constant dictionary or array, or a variable initialized with one, but got "Dictionary".

@@ -2,7 +2,6 @@ GDTEST_ANALYZER_ERROR
 >> ERROR at line 7: "Infer" in the type of parameter "a" can only refer to an earlier parameter, but "b" comes after it.
 >> ERROR at line 10: "Infer" in the type of parameter "a" cannot refer to the parameter itself. Use an earlier parameter.
 >> ERROR at line 13: "Infer" expects the name of a parameter of the function, but "c" is not a parameter of "unknown()".
->> ERROR at line 16: "Infer" can only be used as the return type of a function, or as the type (or an "Array"/"Dictionary" element type) of a parameter, like "func foo(value) -> Infer[value]" or "func foo(a, b: Array[Infer[a]])".
 >> ERROR at line 21: Cannot include a value of type "String" as "int".
 >> ERROR at line 21: Cannot have an element of type "String" in an array of type "Array[int]".
 >> ERROR at line 22: Cannot pass a value of type "int" as "Array[int]".

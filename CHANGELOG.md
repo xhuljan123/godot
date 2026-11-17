@@ -418,7 +418,8 @@ type Wrong = Infer[Bar] # Error: "Infer" can only be used as the return type of 
 - The argument is typed like with `-> Infer[param]` (an enum gives its value type, a dictionary literal a struct type, and so on). Element types that can't be inferred (an untyped argument) stay untyped.
 - Array and dictionary literals passed for such a parameter are typed from it, at runtime too (`[1, 2]` is an `Array[int]`).
 - Inside the function, `Infer[value]` is a `Variant`, and a container with an `Infer` element type is fully untyped (`Array[Infer[value]]` is an `Array`, `Dictionary[Infer[key], String]` a `Dictionary`): the check happens at each call. Like any typed parameter, a value whose type isn't known statically is only checked against the declared type (`Array`) at runtime, not its element type.
-- The parameter must come before (`func foo(a: Array[Infer[b]], b)` is an error). Other positions, like struct keys, nested types or callable signatures, aren't supported.
+- The parameter must come before (`func foo(a: Array[Infer[b]], b)` is an error).
+- `Infer` can also be nested in utility types, struct keys and callable signatures (`DictionaryWithKeys[ValuesOf[Infer[_enum]], int]`, `Struct[{ value: Infer[data] }]`). Then the whole type is resolved again at each call with the argument types. `KeysOf[Infer[a]]`/`ValuesOf[Infer[a]]` read an enum argument, a struct value, or a constant dictionary or array argument. If that fails (`ValuesOf` of a non-constant dictionary), the error is reported on the argument. An argument without a known type skips the check. Inside the function, such a parameter has a plain type: `Dictionary` for struct types, `Array`, `Callable`, or `Variant`.
 - Argument hints and the script documentation show the declared type (`values: Array[Infer[value]]`).
 
 ```gdscript
@@ -430,6 +431,17 @@ func _ready():
 	fill(1, ["1"]) # Error: Cannot have an element of type "String" in an array of type "Array[int]".
 	fill(1, 1) # Error: argument 2 should be "Array[int]" but is "int".
 	fill("a", ["b"]) # OK: "values" is an Array[String].
+```
+
+```gdscript
+enum Bar { KEY_1, KEY_2 }
+
+func set_weights(_enum: Dictionary, weights: DictionaryWithKeys[KeysOf[Infer[_enum]], int]) -> void:
+	pass
+
+func _ready():
+	set_weights(Bar, { KEY_1 = 1, KEY_2 = 2 }) # OK.
+	set_weights(Bar, { KEY_1 = 1 }) # Error: Missing required key "KEY_2".
 ```
 
 #### BoundCallable

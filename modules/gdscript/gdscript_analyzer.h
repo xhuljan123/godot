@@ -38,6 +38,11 @@
 class GDScriptAnalyzer {
 	GDScriptParser *parser = nullptr;
 
+	// `Infer[param]` nested in a parameter type, resolved at a call (see `resolve_infer_parameter_template()`): the types (and
+	// constant dictionary/array values) of the arguments, by parameter index. Null outside of that.
+	const HashMap<int, GDScriptParser::DataType> *infer_substitution_types = nullptr;
+	const HashMap<int, Variant> *infer_substitution_values = nullptr;
+
 	template <typename Fn>
 	class Finally {
 		Fn fn;
@@ -90,6 +95,9 @@ class GDScriptAnalyzer {
 	GDScriptParser::DataType resolve_infer_return_type(GDScriptParser::FunctionNode *p_function);
 	int resolve_infer_parameter_reference(GDScriptParser::FunctionNode *p_function, int p_index, GDScriptParser::TypeNode *p_type);
 	void resolve_infer_parameter_types(GDScriptParser::FunctionNode *p_function, int p_index);
+	static void collect_infer_type_nodes(GDScriptParser::TypeNode *p_type, LocalVector<GDScriptParser::TypeNode *> &r_nodes);
+	void resolve_infer_parameter_template_type(GDScriptParser::FunctionNode *p_function, int p_index, const LocalVector<GDScriptParser::TypeNode *> &p_infer_nodes);
+	GDScriptParser::DataType resolve_infer_parameter_template(const GDScriptParser::ParameterNode *p_parameter, const HashMap<int, GDScriptParser::DataType> &p_argument_types, const HashMap<int, Variant> &p_argument_values, const GDScriptParser::Node *p_error_node);
 	HashSet<int> apply_infer_parameter_types(GDScriptParser::CallNode *p_call, List<GDScriptParser::DataType> &r_par_types);
 	GDScriptParser::DataType infer_type_from_call_argument(GDScriptParser::CallNode *p_call, int p_index, const List<GDScriptParser::DataType> &p_par_types, const GDScriptParser::DataType &p_unconverted_argument_type);
 	GDScriptParser::DataType resolve_infer_call_type(const GDScriptParser::DataType &p_return_type, GDScriptParser::CallNode *p_call, const List<GDScriptParser::DataType> &p_par_types, const GDScriptParser::DataType &p_unconverted_argument_type);

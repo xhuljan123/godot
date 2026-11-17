@@ -5817,6 +5817,84 @@ String GDScriptParser::DataType::to_string_with_alias() const {
 	return vformat("%s (%s)", alias_name, expanded);
 }
 
+// A type as written (`DictionaryWithKeys[KeysOf[Infer[a]], int]`), for editor hints and docs of types that are only resolved at each call.
+String GDScriptParser::type_node_to_string(const TypeNode *p_type) {
+	if (p_type == nullptr) {
+		return "Variant";
+	}
+	const auto expression_to_string = [](const ExpressionNode *p_expression) -> String {
+		if (p_expression == nullptr) {
+			return String();
+		}
+		if (p_expression->type == Node::IDENTIFIER) {
+			return static_cast<const IdentifierNode *>(p_expression)->name;
+		}
+		if (p_expression->type == Node::LITERAL) {
+			return static_cast<const LiteralNode *>(p_expression)->value.get_construct_string();
+		}
+		if (p_expression->is_constant) {
+			return p_expression->reduced_value.get_construct_string();
+		}
+		return "...";
+	};
+
+	if (p_type->is_infer) {
+		return vformat("Infer[%s]", expression_to_string(p_type->infer_expression));
+	}
+	if (p_type->is_type_of) {
+		return vformat("TypeOf[%s]", expression_to_string(p_type->type_of_expression));
+	}
+	if (p_type->is_value_list) {
+		PackedStringArray values;
+		for (const ExpressionNode *value : p_type->value_list_values) {
+			values.push_back(expression_to_string(value));
+		}
+		return vformat("List[%s]", String(", ").join(values));
+	}
+	if (p_type->is_struct) {
+		PackedStringArray fields;
+		for (const TypeNode::StructField &field : p_type->struct_fields) {
+			if (field.is_spread) {
+				fields.push_back("..." + type_node_to_string(field.type));
+				continue;
+			}
+			String text = String(field.name) + (field.optional && field.default_value == nullptr ? "?" : "");
+			if (field.type != nullptr) {
+				text += ": " + type_node_to_string(field.type);
+			}
+			if (field.default_value != nullptr) {
+				text += " = " + expression_to_string(field.default_value);
+			}
+			fields.push_back(text);
+		}
+		return vformat("Struct[{ %s }]", String(", ").join(fields));
+	}
+
+	PackedStringArray names;
+	for (const IdentifierNode *identifier : p_type->type_chain) {
+		names.push_back(identifier != nullptr ? String(identifier->name) : String());
+	}
+	String text = String(".").join(names);
+	if (!p_type->container_types.is_empty() || !p_type->struct_modifier_excluded_keys.is_empty()) {
+		PackedStringArray arguments;
+		for (const TypeNode *argument : p_type->container_types) {
+			arguments.push_back(type_node_to_string(argument));
+		}
+		if (!p_type->struct_modifier_excluded_keys.is_empty()) {
+			PackedStringArray keys;
+			for (const TypeNode::StructModifierKey &key : p_type->struct_modifier_excluded_keys) {
+				keys.push_back(key.name);
+			}
+			arguments.push_back(vformat("{ %s }", String(", ").join(keys)));
+		}
+		text += vformat("[%s]", String(", ").join(arguments));
+	}
+	if (p_type->callable_return_type != nullptr) {
+		text += vformat("[%s]", type_node_to_string(p_type->callable_return_type));
+	}
+	return text;
+}
+
 String GDScriptParser::get_infer_parameter_type_string(const FunctionNode *p_function, const ParameterNode *p_parameter) {
 	if (p_function == nullptr || p_parameter == nullptr || !p_parameter->has_infer_type()) {
 		return String();
@@ -5829,6 +5907,9 @@ String GDScriptParser::get_infer_parameter_type_string(const FunctionNode *p_fun
 	};
 	if (p_parameter->infer_parameter_index >= 0) {
 		return vformat("Infer[%s]", parameter_name(p_parameter->infer_parameter_index));
+	}
+	if (p_parameter->infer_template != nullptr) {
+		return type_node_to_string(p_parameter->infer_template);
 	}
 	PackedStringArray element_names;
 	for (int element = 0; element < p_parameter->infer_element_parameter_indices.size(); element++) {
