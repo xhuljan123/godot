@@ -1,7 +1,7 @@
 GDTEST_ANALYZER_ERROR
 >> ERROR at line 10: "Infer" expects the name of a parameter of the function, but "other" is not a parameter of "wrong_name()".
 >> ERROR at line 13: "Infer" expects the name of a parameter of the function, like "func foo(value) -> Infer[value]".
->> ERROR at line 16: "Infer" can only be used as the return type of a function, like "func foo(value) -> Infer[value]".
+>> ERROR at line 16: "Infer" can only be used as the return type of a function, or as the type (or an "Array"/"Dictionary" element type) of a parameter, like "func foo(value) -> Infer[value]" or "func foo(a, b: Array[Infer[a]])".
 >> ERROR at line 21: Cannot assign a value of type "infer_return.gd.Other" as "infer_return.gd.Bar".
 >> ERROR at line 21: Value of type "infer_return.gd.Other" cannot be assigned to a variable of type "infer_return.gd.Bar".
 >> ERROR at line 23: Key "key_2" does not exist in struct type "Struct[{ key_1: int }]".

@@ -509,6 +509,12 @@ void GDScriptDocGen::_generate_docs(GDScript *p_script, const GDP::ClassNode *p_
 					DocData::ArgumentDoc arg_doc;
 					arg_doc.name = p->identifier->name;
 					_doctype_from_datatype_with_alias(p->type_constraint, arg_doc.type, arg_doc.enumeration);
+					const String infer_type = GDP::get_infer_parameter_type_string(m_func, p);
+					if (!infer_type.is_empty()) {
+						// `b: Infer[a]`, `b: Array[Infer[a]]`: typed from the arguments at each call.
+						arg_doc.type = infer_type;
+						arg_doc.enumeration = String();
+					}
 					if (p->initializer != nullptr) {
 						arg_doc.default_value = docvalue_from_expression(p->initializer);
 					}

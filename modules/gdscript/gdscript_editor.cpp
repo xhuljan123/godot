@@ -923,7 +923,11 @@ static String _make_arguments_hint(const GDScriptParser::FunctionNode *p_functio
 			arghint += String::chr(0xFFFF);
 		}
 		const GDScriptParser::ParameterNode *par = p_function->parameters[i];
-		if (!par->type_constraint.is_hard_type()) {
+		const String infer_type = GDScriptParser::get_infer_parameter_type_string(p_function, par);
+		if (!infer_type.is_empty()) {
+			// `b: Infer[a]`, `b: Array[Infer[a]]`: typed from the arguments at each call.
+			arghint += par->identifier->name.string() + ": " + infer_type;
+		} else if (!par->type_constraint.is_hard_type()) {
 			arghint += par->identifier->name.string() + ": Variant";
 		} else {
 			arghint += par->identifier->name.string() + ": " + par->type_constraint.to_string_with_alias();

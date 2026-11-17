@@ -410,7 +410,26 @@ func _ready():
 	b.key_2 = 1 # Error: "key_2" is not a key of the struct.
 	c = "one" # Error: c is an int.
 
-type Wrong = Infer[Bar] # Error: "Infer" can only be used as the return type of a function.
+type Wrong = Infer[Bar] # Error: "Infer" can only be used as the return type of a function (or in a parameter type).
+```
+
+`Infer[param]` can also be used in the type of a parameter, to type it from an **earlier** argument of the same call: as the whole type (`other: Infer[value]`), or as an element type of `Array` or `Dictionary` (`values: Array[Infer[value]]`, `table: Dictionary[Infer[key], String]`).
+
+- The argument is typed like with `-> Infer[param]` (an enum gives its value type, a dictionary literal a struct type, and so on). Element types that can't be inferred (an untyped argument) stay untyped.
+- Array and dictionary literals passed for such a parameter are typed from it, at runtime too (`[1, 2]` is an `Array[int]`).
+- Inside the function, `Infer[value]` is a `Variant` and `Array[Infer[value]]` an untyped `Array`: the check happens at each call. Like any typed parameter, a value whose type isn't known statically is only checked against the declared type (`Array`) at runtime, not its element type.
+- The parameter must come before (`func foo(a: Array[Infer[b]], b)` is an error). Other positions, like struct keys, nested types or callable signatures, aren't supported.
+- Argument hints and the script documentation show the declared type (`values: Array[Infer[value]]`).
+
+```gdscript
+func fill(value: Variant, values: Array[Infer[value]]) -> void:
+	pass
+
+func _ready():
+	fill(1, [1, 2, 3]) # OK: "values" is an Array[int].
+	fill(1, ["1"]) # Error: Cannot have an element of type "String" in an array of type "Array[int]".
+	fill(1, 1) # Error: argument 2 should be "Array[int]" but is "int".
+	fill("a", ["b"]) # OK: "values" is an Array[String].
 ```
 
 #### BoundCallable

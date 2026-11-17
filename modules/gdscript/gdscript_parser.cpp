@@ -5817,6 +5817,32 @@ String GDScriptParser::DataType::to_string_with_alias() const {
 	return vformat("%s (%s)", alias_name, expanded);
 }
 
+String GDScriptParser::get_infer_parameter_type_string(const FunctionNode *p_function, const ParameterNode *p_parameter) {
+	if (p_function == nullptr || p_parameter == nullptr || !p_parameter->has_infer_type()) {
+		return String();
+	}
+	const auto parameter_name = [&](int p_index) -> String {
+		if (p_index < 0 || p_index >= (int)p_function->parameters.size() || p_function->parameters[p_index]->identifier == nullptr) {
+			return String();
+		}
+		return p_function->parameters[p_index]->identifier->name;
+	};
+	if (p_parameter->infer_parameter_index >= 0) {
+		return vformat("Infer[%s]", parameter_name(p_parameter->infer_parameter_index));
+	}
+	PackedStringArray element_names;
+	for (int element = 0; element < p_parameter->infer_element_parameter_indices.size(); element++) {
+		const int index = p_parameter->infer_element_parameter_indices[element];
+		if (index >= 0) {
+			element_names.push_back(vformat("Infer[%s]", parameter_name(index)));
+		} else {
+			element_names.push_back(p_parameter->type_constraint.get_container_element_type_or_variant(element).to_string());
+		}
+	}
+	const String base_name = p_parameter->type_constraint.builtin_type == Variant::ARRAY ? "Array" : "Dictionary";
+	return vformat("%s[%s]", base_name, String(", ").join(element_names));
+}
+
 String GDScriptParser::DataType::to_string_expanded() const {
 	if (is_infer_return_type()) {
 		return vformat("Infer[%s]", infer_parameter_name);

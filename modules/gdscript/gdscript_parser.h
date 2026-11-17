@@ -153,6 +153,9 @@ public:
 		// parameter at this index (see `GDScriptAnalyzer::resolve_infer_call_type()`). -1 for any other type.
 		int infer_parameter_index = -1;
 		StringName infer_parameter_name;
+		// Type of a parameter at a call site (see `GDScriptAnalyzer::apply_infer_parameter_types()`): per container element type,
+		// the index of the parameter whose argument gives that element type (`Array[Infer[a]]`), or -1.
+		Vector<int> infer_element_parameter_indices;
 
 		enum Kind {
 			BUILTIN,
@@ -511,6 +514,7 @@ public:
 			callable_return_type = p_other.callable_return_type;
 			infer_parameter_index = p_other.infer_parameter_index;
 			infer_parameter_name = p_other.infer_parameter_name;
+			infer_element_parameter_indices = p_other.infer_element_parameter_indices;
 		}
 
 		DataType() = default;
@@ -1278,6 +1282,14 @@ public:
 	};
 
 	struct ParameterNode : public AssignableNode {
+		// `func foo(a, b: Infer[a], c: Array[Infer[a]])`: at each call, the type (or an element type) of this parameter
+		// is the type of the argument passed for an earlier parameter. Inside the function, `Infer[a]` is a `Variant`
+		// (`Array[Infer[a]]` is an untyped `Array`). Set by `GDScriptAnalyzer::resolve_infer_parameter_types()`.
+		int infer_parameter_index = -1; // `b: Infer[a]`: the index of `a`.
+		Vector<int> infer_element_parameter_indices; // `c: Array[Infer[a]]`: per element type, the index of the parameter or -1.
+
+		_FORCE_INLINE_ bool has_infer_type() const { return infer_parameter_index >= 0 || !infer_element_parameter_indices.is_empty(); }
+
 		ParameterNode() {
 			type = PARAMETER;
 		}
@@ -1562,6 +1574,8 @@ public:
 		// from the argument passed for the parameter (an enum gives its value type, a dictionary literal a struct type).
 		bool is_infer = false;
 		ExpressionNode *infer_expression = nullptr;
+		// In a parameter type: the index of the parameter it refers to, once validated by the analyzer. -1 otherwise.
+		int infer_parameter_index = -1;
 
 		// `List["foo", "bar", 1]`: the accepted values (constant expressions).
 		bool is_value_list = false;
@@ -2027,6 +2041,8 @@ public:
 	ClassNode *find_class(const String &p_qualified_name) const;
 	bool has_class(const GDScriptParser::ClassNode *p_class) const;
 	static Variant::Type get_builtin_type(const StringName &p_type); // Excluding `Variant::NIL` and `Variant::OBJECT`.
+	// `b: Infer[a]` / `b: Array[Infer[a]]` as written, for editor hints and docs. Empty if the parameter type doesn't use `Infer`.
+	static String get_infer_parameter_type_string(const FunctionNode *p_function, const ParameterNode *p_parameter);
 
 	CompletionContext get_completion_context() const { return completion_context; }
 	void get_annotation_list(List<MethodInfo> *r_annotations) const;
