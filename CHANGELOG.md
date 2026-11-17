@@ -41,7 +41,6 @@ Table of contents:
   - [parseOptional](#parseoptional)
   - [load_file](#load_file)
 - [Editor support](#editor-support)
-- [Recent changes](#recent-changes)
 
 ### Types
 
