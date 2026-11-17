@@ -717,7 +717,7 @@ void GDScriptParser::parse_program() {
 
 #define PUSH_PENDING_ANNOTATIONS_TO_HEAD \
 	if (!annotation_stack.is_empty()) { \
-		for (AnnotationNode * annot : annotation_stack) { \
+		for (AnnotationNode *annot : annotation_stack) { \
 			head->annotations.push_back(annot); \
 		} \
 		annotation_stack.clear(); \
