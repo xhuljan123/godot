@@ -158,7 +158,24 @@ void GDScript::_super_implicit_constructor(GDScript *p_script, GDScriptInstance 
 	}
 }
 
-GDScriptInstance *GDScript::_create_instance(const Variant **p_args, int p_argcount, Object *p_owner, Callable::CallError &r_error) {
+// First member variable without a default value (from base classes first) that isn't a key of `p_data`.
+// Used by `StructRef` constructors, which require these variables.
+StringName GDScript::_get_missing_struct_ref_variable(const Dictionary &p_data) const {
+	LocalVector<const GDScript *> chain;
+	for (const GDScript *scr = this; scr != nullptr; scr = scr->base.ptr()) {
+		chain.push_back(scr);
+	}
+	for (int i = (int)chain.size() - 1; i >= 0; i--) {
+		for (const StringName &name : chain[i]->required_members) {
+			if (!p_data.has(String(name)) && !p_data.has(name)) {
+				return name;
+			}
+		}
+	}
+	return StringName();
+}
+
+GDScriptInstance *GDScript::_create_instance(const Variant **p_args, int p_argcount, Object *p_owner, Callable::CallError &r_error, bool p_is_new_call) {
 	/* STEP 1, CREATE */
 
 	GDScriptInstance *instance = memnew(GDScriptInstance);
@@ -191,8 +208,10 @@ GDScriptInstance *GDScript::_create_instance(const Variant **p_args, int p_argco
 	}
 
 	GDScriptFunction *applicable_initializer = _super_constructor(this);
-	if (applicable_initializer == nullptr && p_argcount > 0) {
+	if (applicable_initializer == nullptr && (p_argcount > 0 || p_is_new_call)) {
 		// `StructRef` classes without their own `_init()` take a dictionary of their variables: `Foo.new({ foo = 1 })`.
+		// Variables without a default value are required, so the dictionary can only be left out if there are none.
+		// Only checked for `new()`: attaching the script to an existing object (`set_script()`) passes no arguments.
 		StructRef *struct_ref = Object::cast_to<StructRef>(p_owner);
 		if (struct_ref != nullptr) {
 			String error_text;
@@ -200,13 +219,25 @@ GDScriptInstance *GDScript::_create_instance(const Variant **p_args, int p_argco
 				r_error.error = Callable::CallError::CALL_ERROR_TOO_MANY_ARGUMENTS;
 				r_error.expected = 1;
 				error_text = vformat("Expected at most 1 argument (a Dictionary of variables), but received %d.", p_argcount);
+			} else if (p_argcount == 0) {
+				const StringName missing = _get_missing_struct_ref_variable(Dictionary());
+				if (missing != StringName()) {
+					r_error.error = Callable::CallError::CALL_ERROR_TOO_FEW_ARGUMENTS;
+					r_error.expected = 1;
+					error_text = vformat(R"(Expected a Dictionary of variables, since variable "%s" has no default value.)", missing);
+				}
 			} else if (p_args[0]->get_type() != Variant::DICTIONARY) {
 				r_error.error = Callable::CallError::CALL_ERROR_INVALID_ARGUMENT;
 				r_error.argument = 0;
 				r_error.expected = Variant::DICTIONARY;
 				error_text = vformat(R"(Expected a Dictionary of variables, but received "%s".)", Variant::get_type_name(p_args[0]->get_type()));
 			} else {
-				error_text = struct_ref->assign_from_dictionary(*p_args[0]);
+				const StringName missing = _get_missing_struct_ref_variable(*p_args[0]);
+				if (missing != StringName()) {
+					error_text = vformat(R"(Missing required variable "%s" (it has no default value).)", missing);
+				} else {
+					error_text = struct_ref->assign_from_dictionary(*p_args[0]);
+				}
 				if (!error_text.is_empty()) {
 					r_error.error = Callable::CallError::CALL_ERROR_INVALID_ARGUMENT;
 					r_error.argument = 0;
@@ -280,7 +311,7 @@ Variant GDScript::_new(const Variant **p_args, int p_argcount, Callable::CallErr
 		return "Can't inherit from a virtual class.";
 	}
 
-	GDScriptInstance *instance = _create_instance(p_args, p_argcount, owner, r_error);
+	GDScriptInstance *instance = _create_instance(p_args, p_argcount, owner, r_error, true);
 	if (!instance) {
 		if (ref.is_null()) {
 			memdelete(owner);

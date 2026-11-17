@@ -1,12 +1,14 @@
 GDTEST_OK
 22 false
 1
+true
 1
 1
-false
+1
 3 named ["a"]
 true
-renamed true
+renamed false
 42
 true
-7
+1
+true

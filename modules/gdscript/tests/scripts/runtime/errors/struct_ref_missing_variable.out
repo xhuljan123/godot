@@ -1,0 +1,4 @@
+GDTEST_RUNTIME_ERROR
+>> ERROR: Method/function failed. Returning: nullptr
+>>   Error constructing "struct_ref_missing_variable.gd::Foo": Missing required variable "key_1" (it has no default value).
+>> SCRIPT ERROR at runtime/errors/struct_ref_missing_variable.gd:7 on test(): Invalid type in function 'new' in base 'GDScript'. The dictionary of argument 1 doesn't match the expected struct type.

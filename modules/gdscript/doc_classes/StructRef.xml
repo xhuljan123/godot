@@ -5,7 +5,7 @@
 	</brief_description>
 	<description>
 		A [StructRef] is a [RefCounted] whose script variables can be set all at once from a [Dictionary], both when constructing it and later with [method assign].
-		If a GDScript class extending [StructRef] doesn't define its own [code]_init()[/code], its constructor takes an optional dictionary of its variables. The argument is statically typed as [code]Partial[StructFromClass[ThisClass]][/code]: every key is optional, and variables that aren't given keep their default value.
+		If a GDScript class extending [StructRef] doesn't define its own [code]_init()[/code], its constructor takes a dictionary of its variables, statically typed as [code]StructFromClass[ThisClass][/code]: variables without a default value are required keys, and variables with one are optional and keep their default value when they aren't given. The dictionary itself can only be left out when every variable has a default value.
 		[codeblock]
 		class Foo extends StructRef:
 		    var foo := 1
@@ -14,9 +14,11 @@
 		func _ready():
 		    var foo := Foo.new({ foo = 22, bar = false })
 		    print(foo.foo) # Prints 22.
+		    Foo.new({ bar = true }) # "foo" keeps its default value, 1.
+		    Foo.new({ foo = 3 }) # Error: "bar" has no default value, so it's required.
 		    foo.assign({ bar = true }) # Updates only "bar".
 		[/codeblock]
-		Unknown keys and values that don't match the type of their variable are reported as errors in the script editor, and at runtime when the dictionary comes from untyped code. If the class defines its own [code]_init()[/code], that constructor is used instead, and [method assign] can still be called from it.
+		Missing required variables, unknown keys and values that don't match the type of their variable are reported as errors in the script editor, and at runtime when the dictionary comes from untyped code. If the class defines its own [code]_init()[/code], that constructor is used instead, and [method assign] can still be called from it.
 	</description>
 	<tutorials>
 	</tutorials>

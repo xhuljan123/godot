@@ -474,18 +474,31 @@ func _ready():
 
 #### StructRef
 
-A `RefCounted` whose script variables can be set all at once from a dictionary. If the class doesn't define `_init()`, its constructor takes an optional dictionary typed as `Partial[StructFromClass[ThisClass]]`, and `assign()` updates any subset of the variables later.
+A `RefCounted` whose script variables can be set all at once from a dictionary. If the class doesn't define `_init()`, its constructor takes a dictionary typed as `StructFromClass[ThisClass]`: variables without a default value are required keys, and variables with one are optional (they keep their default value when left out). The dictionary itself can only be left out when every variable has a default value. `assign()` updates any subset of the variables later.
+
+Required keys are checked at compile time for dictionary literals and struct values, and at runtime for other dictionaries (`Error constructing "Foo": Missing required variable "key_1" (it has no default value).`). A class with its own `_init()` keeps its own constructor.
 
 ```gdscript
 class Foo extends StructRef:
-	var foo := 1
-	var bar: bool
+	var key_1: int
+	var key_2 = "Bar"
+
+class AllOptional extends StructRef:
+	var key_1: int = 1
+	var key_2 = "Bar"
 
 func _ready():
-	var foo := Foo.new({ foo = 22, bar = false })
-	print(foo.foo) # 22
-	foo.assign({ bar = true }) # Updates only "bar".
-	Foo.new({ baz = 1 }) # Error: "baz" isn't a variable of Foo.
+	Foo.new() # Error: too few arguments, "key_1" is required.
+	Foo.new({}) # Error: missing required key "key_1".
+	Foo.new({ key_2 = "test" }) # Error: missing required key "key_1".
+	Foo.new({ key_1 = "test" }) # Error: "key_1" is an int.
+	var foo := Foo.new({ key_1 = 1 }) # key_2 keeps "Bar".
+	foo.assign({ key_2 = "test" }) # Updates only "key_2".
+	Foo.new({ key_1 = 1, baz = 1 }) # Error: "baz" isn't a variable of Foo.
+
+	AllOptional.new() # Every variable has a default value, so the argument is optional.
+	AllOptional.new({})
+	AllOptional.new({ key_1 = "test" }) # Error: "key_1" is an int.
 ```
 
 ### Methods

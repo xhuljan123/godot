@@ -86,6 +86,7 @@ class GDScript : public Script {
 	// Members are just indices to the instantiated script.
 	HashMap<StringName, MemberInfo> member_indices; // Includes member info of all base GDScript classes.
 	HashSet<StringName> members; // Only members of the current class.
+	Vector<StringName> required_members; // Member variables of the current class without a default value, in declaration order. Required keys of `StructRef` constructors.
 #ifdef DEBUG_ENABLED
 	HashMap<StringName, MemberInfo> old_member_indices; // Used for hot reloading. Empty while not compiling.
 #endif // DEBUG_ENABLED
@@ -183,7 +184,8 @@ private:
 
 	GDScriptFunction *_super_constructor(GDScript *p_script);
 	void _super_implicit_constructor(GDScript *p_script, GDScriptInstance *p_instance, Callable::CallError &r_error);
-	GDScriptInstance *_create_instance(const Variant **p_args, int p_argcount, Object *p_owner, Callable::CallError &r_error);
+	GDScriptInstance *_create_instance(const Variant **p_args, int p_argcount, Object *p_owner, Callable::CallError &r_error, bool p_is_new_call = false);
+	StringName _get_missing_struct_ref_variable(const Dictionary &p_data) const;
 
 	String _get_debug_path() const;
 

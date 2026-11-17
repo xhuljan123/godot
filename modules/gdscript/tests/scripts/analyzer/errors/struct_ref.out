@@ -1,7 +1,11 @@
 GDTEST_ANALYZER_ERROR
->> ERROR at line 6: Key "baz" does not exist in struct type "Struct[{ foo?: int, bar?: bool }]".
->> ERROR at line 7: Cannot assign a value of type "String" to key "foo" of type "int".
->> ERROR at line 9: Cannot assign a value of type "String" to key "bar" of type "bool".
->> ERROR at line 10: Too many arguments for "new()" call. Expected at most 1 but received 2.
->> ERROR at line 12: Invalid argument for "new()" function: argument 1 should be "Struct[{ foo?: int, bar?: bool }]" but is "Struct[{ test: int }]". Key "test" does not exist in the target type.
->> ERROR at line 14: Invalid argument for "assign()" function: argument 1 should be "Struct[{ foo?: int, bar?: bool }]" but is "Struct[{ foo: int, extra: String }]". Key "extra" does not exist in the target type.
+>> ERROR at line 9: Key "baz" does not exist in struct type "Struct[{ foo?: int, bar: bool }]".
+>> ERROR at line 10: Cannot assign a value of type "String" to key "foo" of type "int".
+>> ERROR at line 12: Cannot assign a value of type "String" to key "bar" of type "bool".
+>> ERROR at line 13: Too many arguments for "new()" call. Expected at most 1 but received 2.
+>> ERROR at line 15: Invalid argument for "new()" function: argument 1 should be "Struct[{ foo?: int, bar: bool }]" but is "Struct[{ test: int }]". Key "bar" is required but missing.
+>> ERROR at line 17: Invalid argument for "assign()" function: argument 1 should be "Struct[{ foo?: int, bar?: bool }]" but is "Struct[{ foo: int, extra: String }]". Key "extra" does not exist in the target type.
+>> ERROR at line 18: Too few arguments for "new()" call. Expected at least 1 but received 0.
+>> ERROR at line 19: Missing required key "bar" for struct type "Struct[{ foo?: int, bar: bool }]".
+>> ERROR at line 20: Missing required key "bar" for struct type "Struct[{ foo?: int, bar: bool }]".
+>> ERROR at line 21: Cannot assign a value of type "String" to key "foo" of type "int".

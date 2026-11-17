@@ -1,0 +1,4 @@
+GDTEST_RUNTIME_ERROR
+>> ERROR: Method/function failed. Returning: nullptr
+>>   Error constructing "struct_ref_missing_argument.gd::Foo": Expected a Dictionary of variables, since variable "key_1" has no default value.
+>> SCRIPT ERROR at runtime/errors/struct_ref_missing_argument.gd:7 on test(): Invalid call to function 'new' in base 'GDScript'. Expected 1 argument(s).
