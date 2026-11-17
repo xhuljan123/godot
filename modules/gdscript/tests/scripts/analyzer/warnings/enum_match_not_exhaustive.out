@@ -1,0 +1,14 @@
+GDTEST_OK
+~~ WARNING at line 18: (ENUM_MATCH_NOT_EXHAUSTIVE) "match" doesn't handle every value of the enum "enum_match_not_exhaustive.gd.Foo". Missing: KEY_2, KEY_3. Add a branch for each of them, or a "_" branch.
+~~ WARNING at line 35: (ENUM_MATCH_NOT_EXHAUSTIVE) "match" doesn't handle every value of the enum "enum_match_not_exhaustive.gd.Foo". Missing: KEY_3. Add a branch for each of them, or a "_" branch.
+~~ WARNING at line 62: (ENUM_MATCH_NOT_EXHAUSTIVE) "match" doesn't handle every value of the enum "TabContainer.TabPosition". Missing: POSITION_BOTTOM. Add a branch for each of them, or a "_" branch.
+1
+1
+1
+0
+1
+1
+1
+1
+1
+1

@@ -3635,7 +3635,73 @@ void GDScriptAnalyzer::resolve_match(GDScriptParser::MatchNode *p_match) {
 	for (GDScriptParser::MatchBranchNode *branch : p_match->branches) {
 		resolve_match_branch(branch, p_match->test);
 	}
+
+#ifdef DEBUG_ENABLED
+	check_enum_match_exhaustive(p_match);
+#endif // DEBUG_ENABLED
 }
+
+#ifdef DEBUG_ENABLED
+// `ENUM_MATCH_NOT_EXHAUSTIVE`: a `match` on a value typed as an enum must have a branch for each value of the enum,
+// unless a branch without a guard matches anything (`_` or `var x`). Branches with a `when` guard don't count,
+// since the guard can fail. Engine enums don't require their `*_MAX` sentinel value (like `TYPE_MAX`).
+void GDScriptAnalyzer::check_enum_match_exhaustive(const GDScriptParser::MatchNode *p_match) {
+	if (p_match->test == nullptr) {
+		return;
+	}
+	const GDScriptParser::DataType &test_type = p_match->test->type_constraint;
+	if (test_type.kind != GDScriptParser::DataType::ENUM || test_type.is_meta_type || !test_type.is_hard_type() || test_type.enum_values.is_empty()) {
+		return;
+	}
+
+	HashSet<int64_t> handled_values;
+	for (const GDScriptParser::MatchBranchNode *branch : p_match->branches) {
+		if (branch == nullptr || branch->guard_body != nullptr) {
+			continue;
+		}
+		for (const GDScriptParser::PatternNode *pattern : branch->patterns) {
+			if (pattern == nullptr) {
+				continue;
+			}
+			switch (pattern->pattern_type) {
+				case GDScriptParser::PatternNode::PT_WILDCARD:
+				case GDScriptParser::PatternNode::PT_BIND:
+					return; // Matches every value.
+				case GDScriptParser::PatternNode::PT_LITERAL:
+					if (pattern->literal != nullptr && pattern->literal->value.get_type() == Variant::INT) {
+						handled_values.insert(pattern->literal->value);
+					}
+					break;
+				case GDScriptParser::PatternNode::PT_EXPRESSION:
+					if (pattern->expression != nullptr && pattern->expression->is_constant && pattern->expression->reduced_value.get_type() == Variant::INT) {
+						handled_values.insert(pattern->expression->reduced_value);
+					}
+					break;
+				default:
+					break;
+			}
+		}
+	}
+
+	const bool is_script_enum = test_type.class_type != nullptr || !test_type.script_path.is_empty();
+	PackedStringArray missing;
+	HashSet<int64_t> reported_values; // Several names can share a value.
+	for (const KeyValue<StringName, int64_t> &E : test_type.enum_values) {
+		if (handled_values.has(E.value) || reported_values.has(E.value)) {
+			continue;
+		}
+		const String value_name = E.key;
+		if (!is_script_enum && (value_name == "MAX" || value_name.ends_with("_MAX"))) {
+			continue;
+		}
+		reported_values.insert(E.value);
+		missing.push_back(value_name);
+	}
+	if (!missing.is_empty()) {
+		parser->push_warning(p_match->test, GDScriptWarning::ENUM_MATCH_NOT_EXHAUSTIVE, test_type.to_string(), String(", ").join(missing));
+	}
+}
+#endif // DEBUG_ENABLED
 
 void GDScriptAnalyzer::resolve_match_branch(GDScriptParser::MatchBranchNode *p_match_branch, GDScriptParser::ExpressionNode *p_match_test) {
 	// Apply annotations.

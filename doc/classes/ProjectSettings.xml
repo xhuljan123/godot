@@ -587,6 +587,9 @@
 		<member name="debug/gdscript/warnings/enable" type="bool" setter="" getter="" default="true">
 			If [code]true[/code], enables specific GDScript warnings (see [code]debug/gdscript/warnings/*[/code] settings). If [code]false[/code], disables all GDScript warnings.
 		</member>
+		<member name="debug/gdscript/warnings/enum_match_not_exhaustive" type="int" setter="" getter="" default="2">
+			When set to [b]Warn[/b] or [b]Error[/b], produces a warning or an error respectively when a [code]match[/code] statement on a value typed as an enum doesn't have a branch for every value of the enum. A branch without a guard that matches any value ([code]_[/code] or [code]var x[/code]) handles the remaining values. Branches with a [code]when[/code] guard don't count, since the guard can fail. For engine enums, the [code]*_MAX[/code] sentinel values (like [constant TYPE_MAX]) aren't required.
+		</member>
 		<member name="debug/gdscript/warnings/enum_variable_without_default" type="int" setter="" getter="" default="1">
 			When set to [b]Warn[/b] or [b]Error[/b], produces a warning or an error respectively when a variable has an enum type but no explicit default value, but only if the enum does not contain [code]0[/code] as a valid value.
 		</member>

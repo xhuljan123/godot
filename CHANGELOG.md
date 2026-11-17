@@ -40,6 +40,8 @@ Table of contents:
   - [mergeObjects](#mergeobjects)
   - [parseOptional](#parseoptional)
   - [load_file](#load_file)
+- [Warnings](#warnings)
+  - [ENUM_MATCH_NOT_EXHAUSTIVE](#enum_match_not_exhaustive)
 - [Editor support](#editor-support)
 
 ### Types
@@ -585,6 +587,41 @@ var scene := load_file("res://enemy.tscn") # Typed as PackedScene.
 const Enemy = load_file("res://enemy.gd") # Typed as the script class: Enemy.new()
 const SHADER = load_file("res://shader.gdshader")
 var missing := load_file("res://missing.tscn") # Error: File "res://missing.tscn" does not exist.
+```
+
+### Warnings
+
+#### ENUM_MATCH_NOT_EXHAUSTIVE
+
+A `match` on a value typed as an enum must have a branch for every value of the enum. Otherwise, the editor reports which values are missing. It's treated as an error by default; change it in **Project Settings > Debug > GDScript > Warnings > Enum Match Not Exhaustive** (`debug/gdscript/warnings/enum_match_not_exhaustive`), or silence one `match` with `@warning_ignore("enum_match_not_exhaustive")`.
+
+- A branch without a guard that matches any value (`_` or `var x`) handles the remaining values.
+- Branches with a `when` guard don't count, since the guard can fail.
+- Values sharing the same number are handled together, and constant `int` patterns count too.
+- For engine enums, the `*_MAX` sentinel values (like `TYPE_MAX` or `TabContainer.POSITION_MAX`) aren't required.
+- Only values typed as an enum are checked (`var value: Foo`, `var value := Foo.KEY_1`, parameters, struct keys); untyped values and `int` values aren't.
+
+```gdscript
+enum Foo { KEY_1, KEY_2 }
+
+var value: Foo
+
+func _ready():
+	match value: # OK: every value is handled.
+		Foo.KEY_1:
+			handle()
+		Foo.KEY_2:
+			handle()
+
+	match value: # Error: "match" doesn't handle every value of the enum "Foo". Missing: KEY_2.
+		Foo.KEY_1:
+			handle()
+
+	match value: # OK: "_" handles the remaining values.
+		Foo.KEY_1:
+			handle()
+		_:
+			pass
 ```
 
 ### Editor support
