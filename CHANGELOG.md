@@ -384,7 +384,7 @@ func _ready():
 
 `-> Infer[param]` is a function return type that depends on the argument passed for `param`: each call is typed from its argument at the call site (like a generic `function foo<T>(arg: T): T` in TypeScript).
 
-- An enum gives the type of its values: `foo(MyEnum)` is a `MyEnum`.
+- An enum gives the type of its values: `foo(MyEnum)` is a `MyEnum`, also when the parameter is a `Dictionary`. Likewise, a constant struct or typed array keeps its type when passed for a plain `Dictionary` or `Array` parameter.
 - A dictionary literal with name keys gives the struct type inferred from it, like with [`inferType()`](#infertype): `foo({ key_1: 1 })` is a `Struct[{ key_1: int }]`.
 - An array literal whose elements share a type gives a typed array, and a lambda its full signature (`Callable[int][int]`, kept by `:=`).
 - Any other argument gives its own type, whatever the declared type of the parameter (`Variant`, untyped or anything else): `foo(1)` is an `int`. An argument without a known type gives `Variant`, and a missing argument (with a default value) the type of the parameter.

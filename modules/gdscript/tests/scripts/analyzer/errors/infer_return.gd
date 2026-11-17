@@ -14,6 +14,7 @@ func not_a_name(arg: int) -> Infer[arg.x]:
 	return arg
 
 var not_return: Infer[Bar]
+var member := pick(Bar)
 
 func test():
 	var a := pick(Bar)
@@ -22,4 +23,5 @@ func test():
 	print(b.key_2)
 	var c := identity(1)
 	c = "one"
-	print(a, b, c)
+	member = Other.OTHER_1
+	print(a, b, c, member)

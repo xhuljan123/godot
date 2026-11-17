@@ -88,7 +88,7 @@ class GDScriptAnalyzer {
 	GDScriptParser::DataType resolve_function_arg_type(GDScriptParser::TypeNode *p_type);
 	GDScriptParser::DataType resolve_type_of(GDScriptParser::TypeNode *p_type);
 	GDScriptParser::DataType resolve_infer_return_type(GDScriptParser::FunctionNode *p_function);
-	GDScriptParser::DataType resolve_infer_call_type(const GDScriptParser::DataType &p_return_type, GDScriptParser::CallNode *p_call, const List<GDScriptParser::DataType> &p_par_types);
+	GDScriptParser::DataType resolve_infer_call_type(const GDScriptParser::DataType &p_return_type, GDScriptParser::CallNode *p_call, const List<GDScriptParser::DataType> &p_par_types, const GDScriptParser::DataType &p_unconverted_argument_type);
 	bool report_invalid_dictionary_with_keys_index(GDScriptParser::SubscriptNode *p_subscript, const GDScriptParser::DataType &p_base_type);
 	GDScriptParser::DataType infer_function_type(GDScriptParser::ExpressionNode *p_function);
 	void resolve_lambda_body(GDScriptParser::LambdaNode *p_lambda);

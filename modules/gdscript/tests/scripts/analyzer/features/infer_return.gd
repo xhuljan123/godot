@@ -15,6 +15,11 @@ func with_default(value: int = 3) -> Infer[value]:
 static func untyped(value) -> Infer[value]:
 	return value
 
+func random_value(_enum: Dictionary) -> Infer[_enum]:
+	return _enum[_enum.keys().pick_random()]
+
+var member := random_value(Bar) # Bar
+
 func test():
 	var a := first(Bar) # Bar
 	var bar: Bar = a
@@ -42,3 +47,6 @@ func test():
 	var h := identity(func(x: int) -> int: return x + 1) # Callable[int][int]
 	var result: int = h.call(1)
 	print(result)
+
+	var member_value: Bar = member
+	print(member_value == Bar.KEY_1 or member_value == Bar.KEY_2)

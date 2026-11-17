@@ -2243,6 +2243,15 @@ static bool _guess_expression_type(GDScriptParser::CompletionContext &p_context,
 				GDScriptParser::CompletionContext c = p_context;
 				c.current_line = call->start_line;
 
+				// A call to a function declared with `-> Infer[param]` is typed by the analyzer from its argument
+				// (`foo(MyEnum)` is a `MyEnum`). Guessing from the `return` statements of the function would be wrong.
+				if (call->is_infer_return && call->type_constraint.is_hard_type()) {
+					r_type = GDScriptCompletionIdentifier();
+					r_type.type = call->type_constraint;
+					found = true;
+					break;
+				}
+
 				GDScriptParser::Node::Type callee_type = call->get_callee_type();
 
 				GDScriptCompletionIdentifier base;

@@ -2,8 +2,10 @@ GDTEST_ANALYZER_ERROR
 >> ERROR at line 10: "Infer" expects the name of a parameter of the function, but "other" is not a parameter of "wrong_name()".
 >> ERROR at line 13: "Infer" expects the name of a parameter of the function, like "func foo(value) -> Infer[value]".
 >> ERROR at line 16: "Infer" can only be used as the return type of a function, like "func foo(value) -> Infer[value]".
->> ERROR at line 20: Cannot assign a value of type "infer_return.gd.Other" as "infer_return.gd.Bar".
->> ERROR at line 20: Value of type "infer_return.gd.Other" cannot be assigned to a variable of type "infer_return.gd.Bar".
->> ERROR at line 22: Key "key_2" does not exist in struct type "Struct[{ key_1: int }]".
->> ERROR at line 24: Cannot assign a value of type "String" as "int".
->> ERROR at line 24: Value of type "String" cannot be assigned to a variable of type "int".
+>> ERROR at line 21: Cannot assign a value of type "infer_return.gd.Other" as "infer_return.gd.Bar".
+>> ERROR at line 21: Value of type "infer_return.gd.Other" cannot be assigned to a variable of type "infer_return.gd.Bar".
+>> ERROR at line 23: Key "key_2" does not exist in struct type "Struct[{ key_1: int }]".
+>> ERROR at line 25: Cannot assign a value of type "String" as "int".
+>> ERROR at line 25: Value of type "String" cannot be assigned to a variable of type "int".
+>> ERROR at line 26: Cannot assign a value of type "infer_return.gd.Other" as "infer_return.gd.Bar".
+>> ERROR at line 26: Value of type "infer_return.gd.Other" cannot be assigned to a variable of type "infer_return.gd.Bar".

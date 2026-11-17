@@ -1107,7 +1107,7 @@ GDScriptParser::DataType GDScriptAnalyzer::resolve_infer_return_type(GDScriptPar
 // - A dictionary literal with name keys gives the struct type inferred from it, like `inferType()` (`foo({ a = 1 })` is a `Struct[{ a: int }]`).
 // - An array literal whose elements share a type gives a typed array, a lambda its full signature (`Callable[Args][Return]`).
 // - Any other argument gives its own type (`Variant` if it isn't known). Without an argument, it's the type of the parameter.
-GDScriptParser::DataType GDScriptAnalyzer::resolve_infer_call_type(const GDScriptParser::DataType &p_return_type, GDScriptParser::CallNode *p_call, const List<GDScriptParser::DataType> &p_par_types) {
+GDScriptParser::DataType GDScriptAnalyzer::resolve_infer_call_type(const GDScriptParser::DataType &p_return_type, GDScriptParser::CallNode *p_call, const List<GDScriptParser::DataType> &p_par_types, const GDScriptParser::DataType &p_unconverted_argument_type) {
 	const int index = p_return_type.infer_parameter_index;
 	GDScriptParser::DataType result;
 
@@ -1121,7 +1121,13 @@ GDScriptParser::DataType GDScriptAnalyzer::resolve_infer_call_type(const GDScrip
 			result = GDScriptParser::DataType::get_variant_type();
 		}
 	} else {
-		const GDScriptParser::DataType argument_type = argument->type_constraint;
+		// `validate_call_arg()` gives a constant argument the type of its parameter. When the value wasn't converted
+		// (same built-in type), the type from before is kept: an enum, a constant struct or a typed array passed for a
+		// `Dictionary` or `Array` parameter would otherwise become a plain `Dictionary` or `Array`. When the value was
+		// converted (`1` passed for a `float` parameter is `1.0`), the converted type is the one the function receives.
+		const GDScriptParser::DataType &converted_type = argument->type_constraint;
+		const bool keeps_unconverted_type = p_unconverted_argument_type.is_set() && p_unconverted_argument_type.is_hard_type() && p_unconverted_argument_type.builtin_type == converted_type.builtin_type;
+		const GDScriptParser::DataType argument_type = keeps_unconverted_type ? p_unconverted_argument_type : converted_type;
 		if (argument_type.kind == GDScriptParser::DataType::ENUM && argument_type.is_meta_type) {
 			// `foo(MyEnum)`: the values of the enum.
 			result = type_from_metatype(argument_type);
@@ -6012,6 +6018,14 @@ void GDScriptAnalyzer::reduce_call(GDScriptParser::CallNode *p_call, bool p_is_a
 				update_dictionary_literal_element_type(E.value, key, value);
 			}
 		}
+		// `-> Infer[param]`: the type of the argument before `validate_call_arg()`, which gives constant arguments
+		// the type of their parameter when the value doesn't need a conversion (an enum passed for a `Dictionary`
+		// parameter would become a plain `Dictionary`).
+		GDScriptParser::DataType infer_unconverted_argument_type;
+		if (return_type.is_infer_return_type() && return_type.infer_parameter_index < (int)p_call->arguments.size() && p_call->arguments[return_type.infer_parameter_index] != nullptr) {
+			infer_unconverted_argument_type = p_call->arguments[return_type.infer_parameter_index]->type_constraint;
+		}
+
 		validate_call_arg(par_types, default_arg_count, is_vararg, p_call);
 
 		if (base_type.kind == GDScriptParser::DataType::ENUM && base_type.is_meta_type) {
@@ -6072,7 +6086,7 @@ void GDScriptAnalyzer::reduce_call(GDScriptParser::CallNode *p_call, bool p_is_a
 
 		if (return_type.is_infer_return_type()) {
 			// `func foo(value) -> Infer[value]`: the call is typed from the argument passed for `value`.
-			return_type = resolve_infer_call_type(return_type, p_call, par_types);
+			return_type = resolve_infer_call_type(return_type, p_call, par_types, infer_unconverted_argument_type);
 			p_call->is_infer_return = !return_type.is_variant();
 		}
 
