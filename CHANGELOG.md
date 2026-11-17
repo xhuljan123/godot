@@ -26,6 +26,7 @@ Table of contents:
   - [Typed callables](#typed-callables-callableargsreturn)
   - [FunctionArgType](#functionargtype)
   - [TypeOf](#typeof)
+  - [Infer](#infer)
   - [BoundCallable](#boundcallable)
 - [Syntax](#syntax)
   - [Optional chaining](#optional-chaining-)
@@ -379,6 +380,38 @@ func _ready():
 	var copy: TypeOf[b] = { key = "k" }
 ```
 
+#### Infer
+
+`-> Infer[param]` is a function return type that depends on the argument passed for `param`: each call is typed from its argument at the call site (like a generic `function foo<T>(arg: T): T` in TypeScript).
+
+- An enum gives the type of its values: `foo(MyEnum)` is a `MyEnum`.
+- A dictionary literal with name keys gives the struct type inferred from it, like with [`inferType()`](#infertype): `foo({ key_1: 1 })` is a `Struct[{ key_1: int }]`.
+- An array literal whose elements share a type gives a typed array, and a lambda its full signature (`Callable[int][int]`, kept by `:=`).
+- Any other argument gives its own type, whatever the declared type of the parameter (`Variant`, untyped or anything else): `foo(1)` is an `int`. An argument without a known type gives `Variant`, and a missing argument (with a default value) the type of the parameter.
+- Inside the function, the return value isn't checked (any value can be returned). At each call, the compiled code checks that the returned value matches the inferred type.
+- `param` must be a parameter of the function (not the rest parameter). `Infer` can't be used anywhere else than as a function return type.
+
+```gdscript
+enum Bar { KEY_1, KEY_2 }
+
+func foo(arg: Dictionary) -> Infer[arg]:
+	if arg.has("KEY_1"):
+		return arg.KEY_1
+	return arg
+
+func identity(arg: Variant) -> Infer[arg]:
+	return arg
+
+func _ready():
+	var a := foo(Bar) # a is a Bar.
+	var b := foo({ key_1: 1 }) # b is a Struct[{ key_1: int }].
+	var c := identity(1) # c is an int.
+	b.key_2 = 1 # Error: "key_2" is not a key of the struct.
+	c = "one" # Error: c is an int.
+
+type Wrong = Infer[Bar] # Error: "Infer" can only be used as the return type of a function.
+```
+
 #### BoundCallable
 
 `BoundCallable` is the type of the result of [`bind_strict()`](#callablebind_strict): a callable with all its arguments already bound, which can only be called with `call()` (or `call_deferred()`) without arguments. `BoundCallable[ReturnType]` also gives the return type.
@@ -544,7 +577,7 @@ var missing := load_file("res://missing.tscn") # Error: File "res://missing.tscn
 
 ### Editor support
 
-- Syntax highlighting: `type` in type alias declarations uses the keyword color (like `var` and `func`). `Struct`, `Partial`, `Required`, `Omit`, `Pick`, `StructFromClass`, `ExtractExportableVars`, `StructToVariant`, `List`, `KeysOf`, `ValuesOf`, `DictionaryWithKeys`, `NestedArray`, `NestedDictionary`, `FunctionArgType` and `TypeOf` use the base type color when followed by `[`. `BoundCallable` uses the base type color.
+- Syntax highlighting: `type` in type alias declarations uses the keyword color (like `var` and `func`). `Struct`, `Partial`, `Required`, `Omit`, `Pick`, `StructFromClass`, `ExtractExportableVars`, `StructToVariant`, `List`, `KeysOf`, `ValuesOf`, `DictionaryWithKeys`, `NestedArray`, `NestedDictionary`, `FunctionArgType`, `TypeOf` and `Infer` use the base type color when followed by `[`. `BoundCallable` uses the base type color.
 - Argument hints: `call()`, `call_deferred()` and `bind_strict()` on a callable with a known signature show its argument types.
-- Code completion: type names, struct keys (in literals, after `.`, in `Foo.` types), variables and members inside `TypeOf[...]`, `List`/`KeysOf`/`ValuesOf` values in assignments and call arguments, members after `?.`.
-- Hover tooltips, argument hints and the script documentation show the full types, including the aliased type of type aliases (`Foo (Struct[{ ... }])`).
+- Code completion: type names, struct keys (in literals, after `.`, in `Foo.` types), variables and members inside `TypeOf[...]`, parameters inside `Infer[...]`, `List`/`KeysOf`/`ValuesOf` values in assignments and call arguments, members after `?.`.
+- Hover tooltips, argument hints and the script documentation show the full types, including the aliased type of type aliases (`Foo (Struct[{ ... }])`), and `Infer[param]` as the return type of functions declared with it.

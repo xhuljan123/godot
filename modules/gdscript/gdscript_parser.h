@@ -149,6 +149,10 @@ public:
 		// `BoundCallable` (the result of `bind_strict()`): a typed callable without arguments that can only be called.
 		// Only `BoundCallable` values can be assigned to it.
 		bool is_bound_callable = false;
+		// `-> Infer[param]`: the return type of a function whose calls are typed from the argument passed for the
+		// parameter at this index (see `GDScriptAnalyzer::resolve_infer_call_type()`). -1 for any other type.
+		int infer_parameter_index = -1;
+		StringName infer_parameter_name;
 
 		enum Kind {
 			BUILTIN,
@@ -316,6 +320,8 @@ public:
 			is_value_list = false;
 			value_list_values.clear();
 		}
+
+		_FORCE_INLINE_ bool is_infer_return_type() const { return infer_parameter_index >= 0; }
 
 		_FORCE_INLINE_ int get_callable_required_arg_count() const { return callable_arg_types.size() - callable_default_arg_count; }
 
@@ -503,6 +509,8 @@ public:
 			callable_default_arg_count = p_other.callable_default_arg_count;
 			callable_is_vararg = p_other.callable_is_vararg;
 			callable_return_type = p_other.callable_return_type;
+			infer_parameter_index = p_other.infer_parameter_index;
+			infer_parameter_name = p_other.infer_parameter_name;
 		}
 
 		DataType() = default;
@@ -767,6 +775,9 @@ public:
 		StringName function_name;
 		bool is_super = false;
 		bool is_static = false;
+		// Calls a function declared with `-> Infer[param]`: typed from the argument, but the function
+		// may return anything at runtime, so the compiled code checks the returned value.
+		bool is_infer_return = false;
 
 		CallNode() {
 			type = CALL;
@@ -1546,6 +1557,11 @@ public:
 		// The argument is an identifier, optionally followed by attributes (`node.position`, `config.key`).
 		bool is_type_of = false;
 		ExpressionNode *type_of_expression = nullptr;
+
+		// `-> Infer[param]`: only valid as a function return type. The type of each call is inferred
+		// from the argument passed for the parameter (an enum gives its value type, a dictionary literal a struct type).
+		bool is_infer = false;
+		ExpressionNode *infer_expression = nullptr;
 
 		// `List["foo", "bar", 1]`: the accepted values (constant expressions).
 		bool is_value_list = false;

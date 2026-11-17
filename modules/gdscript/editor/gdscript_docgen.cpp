@@ -496,6 +496,9 @@ void GDScriptDocGen::_generate_docs(GDScript *p_script, const GDP::ClassNode *p_
 
 				if (func_name == "_init" || func_name == "_static_init") {
 					method_doc.return_type = "void";
+				} else if (m_func->return_type_constraint.is_infer_return_type()) {
+					// `-> Infer[param]`: typed from the argument at each call.
+					method_doc.return_type = m_func->return_type_constraint.to_string();
 				} else if (!m_func->return_type_constraint.is_variant()) {
 					_doctype_from_datatype_with_alias(m_func->return_type_constraint, method_doc.return_type, method_doc.return_enum, true);
 				} else {

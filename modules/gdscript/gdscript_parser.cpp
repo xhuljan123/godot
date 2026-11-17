@@ -717,7 +717,7 @@ void GDScriptParser::parse_program() {
 
 #define PUSH_PENDING_ANNOTATIONS_TO_HEAD \
 	if (!annotation_stack.is_empty()) { \
-		for (AnnotationNode *annot : annotation_stack) { \
+		for (AnnotationNode * annot : annotation_stack) { \
 			head->annotations.push_back(annot); \
 		} \
 		annotation_stack.clear(); \
@@ -4027,6 +4027,23 @@ GDScriptParser::TypeNode *GDScriptParser::parse_type(bool p_allow_void) {
 		return type;
 	}
 
+	if (type_element->name == SNAME("Infer") && check(GDScriptTokenizer::Token::BRACKET_OPEN)) {
+		// `-> Infer[param]`: the return type of a call is inferred from the argument passed for `param`.
+		// The argument is parsed as an expression, so code completion suggests the parameters.
+		// The analyzer only accepts a parameter name of the function.
+		push_multiline(true);
+		advance(); // "[".
+		type->is_infer = true;
+		type->infer_expression = parse_expression(false);
+		if (type->infer_expression == nullptr) {
+			push_error(R"(Expected a parameter name after "Infer[".)");
+		}
+		pop_multiline();
+		consume(GDScriptTokenizer::Token::BRACKET_CLOSE, R"(Expected closing "]" after "Infer" argument.)");
+		complete_extents(type);
+		return type;
+	}
+
 	// Utility types: `Partial[StructType]`, `Required[StructType]`, `StructFromClass[ClassType]`, `ExtractExportableVars[ClassType]`, `StructToVariant[StructType]`, `Omit`, `Pick`, `KeysOf[Source]`, `ValuesOf[Source]`, `FunctionArgType[function]` and `DictionaryWithKeys[Keys, Value]`.
 	TypeNode::StructModifier struct_modifier = TypeNode::STRUCT_MODIFIER_NONE;
 	if (type_element->name == SNAME("Partial")) {
@@ -5801,6 +5818,9 @@ String GDScriptParser::DataType::to_string_with_alias() const {
 }
 
 String GDScriptParser::DataType::to_string_expanded() const {
+	if (is_infer_return_type()) {
+		return vformat("Infer[%s]", infer_parameter_name);
+	}
 	if (is_value_list_type()) {
 		return vformat("List[%s]", get_value_list_text());
 	}

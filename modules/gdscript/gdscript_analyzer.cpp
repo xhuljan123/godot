@@ -1060,6 +1060,112 @@ GDScriptParser::DataType GDScriptAnalyzer::resolve_type_of(GDScriptParser::TypeN
 	return value_type;
 }
 
+static bool get_literal_struct_key_name(const GDScriptParser::DictionaryNode *p_dictionary, const GDScriptParser::ExpressionNode *p_key, StringName &r_key);
+
+// `func foo(value) -> Infer[value]`: the declared return type of the function. Inside the function it's a `Variant`
+// (any value can be returned), and each call is typed from the argument passed for `value` (see `resolve_infer_call_type()`).
+GDScriptParser::DataType GDScriptAnalyzer::resolve_infer_return_type(GDScriptParser::FunctionNode *p_function) {
+	GDScriptParser::DataType result;
+	result.kind = GDScriptParser::DataType::VARIANT;
+	result.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
+
+	GDScriptParser::TypeNode *type = p_function->return_type;
+	GDScriptParser::ExpressionNode *argument = type->infer_expression;
+	if (argument == nullptr) {
+		return result; // Error already reported by the parser.
+	}
+	if (argument->type != GDScriptParser::Node::IDENTIFIER) {
+		push_error(R"("Infer" expects the name of a parameter of the function, like "func foo(value) -> Infer[value]".)", argument);
+		return result;
+	}
+
+	const StringName name = static_cast<GDScriptParser::IdentifierNode *>(argument)->name;
+	for (uint32_t i = 0; i < p_function->parameters.size(); i++) {
+		GDScriptParser::ParameterNode *parameter = p_function->parameters[i];
+		if (parameter == nullptr || parameter->identifier == nullptr || parameter->identifier->name != name) {
+			continue;
+		}
+		parameter->usages++; // The return type depends on it: no "unused parameter" warning.
+		argument->type_constraint = parameter->type_constraint; // For hover tooltips.
+		result.infer_parameter_index = (int)i;
+		result.infer_parameter_name = name;
+		return result;
+	}
+
+	if (p_function->rest_parameter != nullptr && p_function->rest_parameter->identifier != nullptr && p_function->rest_parameter->identifier->name == name) {
+		push_error(vformat(R"("Infer" cannot use the rest parameter "%s". Use a regular parameter instead.)", name), argument);
+	} else if (p_function->identifier != nullptr) {
+		push_error(vformat(R"*("Infer" expects the name of a parameter of the function, but "%s" is not a parameter of "%s()".)*", name, p_function->identifier->name), argument);
+	} else {
+		push_error(vformat(R"("Infer" expects the name of a parameter of the function, but "%s" is not a parameter of this function.)", name), argument);
+	}
+	return result;
+}
+
+// Type of a call to a function declared with `-> Infer[param]`, from the argument passed for `param`:
+// - An enum (`foo(MyEnum)`) gives the type of its values (`MyEnum`).
+// - A dictionary literal with name keys gives the struct type inferred from it, like `inferType()` (`foo({ a = 1 })` is a `Struct[{ a: int }]`).
+// - An array literal whose elements share a type gives a typed array, a lambda its full signature (`Callable[Args][Return]`).
+// - Any other argument gives its own type (`Variant` if it isn't known). Without an argument, it's the type of the parameter.
+GDScriptParser::DataType GDScriptAnalyzer::resolve_infer_call_type(const GDScriptParser::DataType &p_return_type, GDScriptParser::CallNode *p_call, const List<GDScriptParser::DataType> &p_par_types) {
+	const int index = p_return_type.infer_parameter_index;
+	GDScriptParser::DataType result;
+
+	GDScriptParser::ExpressionNode *argument = index < (int)p_call->arguments.size() ? p_call->arguments[index] : nullptr;
+	if (argument == nullptr) {
+		// Default value: the declared type of the parameter.
+		if (index < p_par_types.size()) {
+			result = p_par_types.get(index);
+		}
+		if (!result.is_set() || !result.is_hard_type()) {
+			result = GDScriptParser::DataType::get_variant_type();
+		}
+	} else {
+		const GDScriptParser::DataType argument_type = argument->type_constraint;
+		if (argument_type.kind == GDScriptParser::DataType::ENUM && argument_type.is_meta_type) {
+			// `foo(MyEnum)`: the values of the enum.
+			result = type_from_metatype(argument_type);
+		} else if (argument->type == GDScriptParser::Node::DICTIONARY && !argument_type.is_struct_type() && !argument_type.has_container_element_types()) {
+			GDScriptParser::DictionaryNode *dictionary = static_cast<GDScriptParser::DictionaryNode *>(argument);
+			bool has_struct_keys = !dictionary->elements.is_empty();
+			for (const GDScriptParser::DictionaryNode::Pair &element : dictionary->elements) {
+				StringName key;
+				if (!get_literal_struct_key_name(dictionary, element.key, key)) {
+					has_struct_keys = false;
+					break;
+				}
+			}
+			if (has_struct_keys) {
+				// Validates the literal against the inferred type and turns bare identifier keys into key names.
+				update_struct_literal(dictionary, infer_struct_type_from_literal(dictionary));
+			}
+			result = dictionary->type_constraint;
+		} else if (argument->type == GDScriptParser::Node::ARRAY && !argument_type.has_container_element_type(0)) {
+			result = infer_literal_value_type(argument);
+			if (result.has_container_element_type(0)) {
+				// The array must be typed at runtime too.
+				update_array_literal_element_type(static_cast<GDScriptParser::ArrayNode *>(argument), result.get_container_element_type(0));
+				result = argument->type_constraint;
+			}
+		} else if (argument->type == GDScriptParser::Node::LAMBDA) {
+			result = infer_function_type(argument);
+		} else {
+			result = argument_type;
+		}
+	}
+
+	if (!result.is_set() || result.has_no_type() || !result.is_hard_type() || result.is_meta_type || result.is_pseudo_type || (result.kind == GDScriptParser::DataType::BUILTIN && result.builtin_type == Variant::NIL)) {
+		result = GDScriptParser::DataType::get_variant_type();
+	}
+	result.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
+	result.is_constant = false;
+	result.is_read_only = false;
+	result.is_coroutine = p_return_type.is_coroutine;
+	result.infer_parameter_index = -1;
+	result.infer_parameter_name = StringName();
+	return result;
+}
+
 // `DictionaryWithKeys[...]` only accepts its own keys. A constant index is checked like any struct key, and a `List`/`KeysOf`
 // index must only contain its keys. Any other typed index (`var key := "33"`, a `String` parameter) could be any value,
 // so it's an error. A variable whose initial value is a constant that isn't a key reports that value.
@@ -1417,6 +1523,12 @@ GDScriptParser::DataType GDScriptAnalyzer::resolve_datatype(GDScriptParser::Type
 		}
 		p_type->resolved_type = result;
 		return result;
+	}
+
+	if (p_type->is_infer) {
+		// `Infer[param]` is handled by `resolve_function_signature()` when it's the return type of a function.
+		push_error(R"("Infer" can only be used as the return type of a function, like "func foo(value) -> Infer[value]".)", p_type);
+		return bad_type;
 	}
 
 	if (p_type->is_type_of) {
@@ -2848,7 +2960,10 @@ void GDScriptAnalyzer::resolve_function_signature(GDScriptParser::FunctionNode *
 			}
 		}
 	} else {
-		if (p_function->return_type != nullptr) {
+		if (p_function->return_type != nullptr && p_function->return_type->is_infer) {
+			// `-> Infer[param]`: each call is typed from the argument passed for `param`.
+			p_function->return_type_constraint = resolve_infer_return_type(p_function);
+		} else if (p_function->return_type != nullptr) {
 			p_function->return_type_constraint = type_from_metatype(resolve_datatype(p_function->return_type));
 		} else {
 			// In case the function is not typed, we can safely assume it's a Variant, so it's okay to mark as "inferred" here.
@@ -3228,7 +3343,9 @@ void GDScriptAnalyzer::resolve_assignable(GDScriptParser::AssignableNode *p_assi
 			}
 
 			const bool is_infer_type_call = p_assignable->initializer->type == GDScriptParser::Node::CALL && static_cast<const GDScriptParser::CallNode *>(p_assignable->initializer)->function_name == SNAME("inferType") && !static_cast<const GDScriptParser::CallNode *>(p_assignable->initializer)->is_super && (static_cast<const GDScriptParser::CallNode *>(p_assignable->initializer)->callee == nullptr || static_cast<const GDScriptParser::CallNode *>(p_assignable->initializer)->callee->type == GDScriptParser::Node::IDENTIFIER);
-			if (!is_constant && type.is_typed_callable && !type.is_bound_callable && !is_infer_type_call) { // `inferType(func ...)` and `BoundCallable` keep the signature on purpose.
+			// A call to a function declared with `-> Infer[param]` keeps the signature too (`identity(func(a: int) -> int: ...)`).
+			const bool is_infer_return_call = p_assignable->initializer->type == GDScriptParser::Node::CALL && static_cast<const GDScriptParser::CallNode *>(p_assignable->initializer)->is_infer_return;
+			if (!is_constant && type.is_typed_callable && !type.is_bound_callable && !is_infer_type_call && !is_infer_return_call) { // `inferType(func ...)`, `Infer` calls and `BoundCallable` keep the signature on purpose.
 				// A variable inferred from a lambda or function reference stays a plain `Callable`, so it can be
 				// reassigned with a callable of any signature. Use `Callable[...]` to opt in to signature checks.
 				type.clear_callable_signature();
@@ -5952,6 +6069,12 @@ void GDScriptAnalyzer::reduce_call(GDScriptParser::CallNode *p_call, bool p_is_a
 			}
 		}
 #endif // DEBUG_ENABLED
+
+		if (return_type.is_infer_return_type()) {
+			// `func foo(value) -> Infer[value]`: the call is typed from the argument passed for `value`.
+			return_type = resolve_infer_call_type(return_type, p_call, par_types);
+			p_call->is_infer_return = !return_type.is_variant();
+		}
 
 		call_type = return_type;
 	} else {
