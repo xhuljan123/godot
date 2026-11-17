@@ -3059,6 +3059,11 @@ void GDScriptAnalyzer::resolve_function_signature(GDScriptParser::FunctionNode *
 		GDScriptParser::ParameterNode *param = p_function->parameters[param_index];
 		resolve_infer_parameter_types(p_function, param_index);
 		resolve_parameter(param);
+		if (!param->infer_element_parameter_indices.is_empty()) {
+			// `d: Dictionary[String, Infer[a]]`: see `ParameterNode::infer_call_site_type`.
+			param->infer_call_site_type = param->type_constraint;
+			param->type_constraint.container_element_types.clear();
+		}
 		method_info.arguments.push_back(param->type_constraint.to_property_info(param->identifier->name));
 #ifdef DEBUG_ENABLED
 		is_shadowing(param->identifier, "function parameter", true);
@@ -8829,7 +8834,10 @@ bool GDScriptAnalyzer::get_function_signature(GDScriptParser::Node *p_source, bo
 				par_type.infer_parameter_index = param->infer_parameter_index;
 				par_type.infer_parameter_name = found_function->parameters[param->infer_parameter_index]->identifier->name;
 			}
-			par_type.infer_element_parameter_indices = param->infer_element_parameter_indices;
+			if (!param->infer_element_parameter_indices.is_empty()) {
+				par_type = param->infer_call_site_type; // With the declared element types (see `ParameterNode::infer_call_site_type`).
+				par_type.infer_element_parameter_indices = param->infer_element_parameter_indices;
+			}
 			r_par_types.push_back(par_type);
 			if (param->initializer != nullptr) {
 				r_default_arg_count++;

@@ -5836,10 +5836,10 @@ String GDScriptParser::get_infer_parameter_type_string(const FunctionNode *p_fun
 		if (index >= 0) {
 			element_names.push_back(vformat("Infer[%s]", parameter_name(index)));
 		} else {
-			element_names.push_back(p_parameter->type_constraint.get_container_element_type_or_variant(element).to_string());
+			element_names.push_back(p_parameter->infer_call_site_type.get_container_element_type_or_variant(element).to_string());
 		}
 	}
-	const String base_name = p_parameter->type_constraint.builtin_type == Variant::ARRAY ? "Array" : "Dictionary";
+	const String base_name = p_parameter->infer_call_site_type.builtin_type == Variant::ARRAY ? "Array" : "Dictionary";
 	return vformat("%s[%s]", base_name, String(", ").join(element_names));
 }
 

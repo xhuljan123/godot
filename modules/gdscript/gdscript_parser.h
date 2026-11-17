@@ -1287,6 +1287,10 @@ public:
 		// (`Array[Infer[a]]` is an untyped `Array`). Set by `GDScriptAnalyzer::resolve_infer_parameter_types()`.
 		int infer_parameter_index = -1; // `b: Infer[a]`: the index of `a`.
 		Vector<int> infer_element_parameter_indices; // `c: Array[Infer[a]]`: per element type, the index of the parameter or -1.
+		// `d: Dictionary[String, Infer[a]]`: the declared type with its other element types, for the checks at each call. Inside the
+		// function, the parameter is a fully untyped container: the argument has the inferred element types at runtime, and typed
+		// containers only accept the exact same element types.
+		DataType infer_call_site_type;
 
 		_FORCE_INLINE_ bool has_infer_type() const { return infer_parameter_index >= 0 || !infer_element_parameter_indices.is_empty(); }
 
