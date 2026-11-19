@@ -303,6 +303,22 @@ func _ready():
 	tile_type_mapping[name] # Error: Cannot use a value of type "String" as a key of "...", which only accepts its keys ("1", "2").
 ```
 
+With int keys, a key typed as an enum (a variable or parameter of type `Tile`) is accepted when every value of the enum is a key, like `ValuesOf[Tile]` keys:
+
+```gdscript
+enum Tile { GRASS, WATER }
+var costs: DictionaryWithKeys[ValuesOf[Tile], float] = { Tile.GRASS: 1.0, Tile.WATER: 3.5 }
+
+func cost_of(tile: Tile) -> float:
+	return costs[tile] # OK.
+
+func _ready():
+	var tile := Tile.WATER
+	var cost := costs[tile] # OK, `cost` is a float.
+```
+
+If the enum has a value that isn't a key, it's an error: `Key 2 of "Tile" does not exist in struct type "DictionaryWithKeys[List[0, 1], float]".`
+
 #### NestedArray and NestedDictionary
 
 `NestedArray[...]` and `NestedDictionary[...]` work like `Array` and `Dictionary`, but their element types can be typed collections. `Array` and `Dictionary` are unchanged (`Array[Array[int]]` is still an error).

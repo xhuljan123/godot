@@ -8,6 +8,10 @@ var numbers: DictionaryWithKeys[List[1, 2], String] = { 1: "one", 2: "two" }
 func cost(tile: ValuesOf[Tile]) -> float:
 	return costs[tile]
 
+# An enum-typed key can only hold the values of the enum.
+func cost_of(tile: Tile) -> float:
+	return costs[tile]
+
 func test():
 	print(costs[Tile.GRASS] + costs[1])
 	print(cost(Tile.WATER))
@@ -19,3 +23,7 @@ func test():
 	var untyped = { 0: 2.0, 1: 4.0 }
 	var checked: TileCosts = untyped
 	print(checked[0])
+	var tile := Tile.WATER
+	var tile_cost := costs[tile]
+	print(tile_cost)
+	print(cost_of(Tile.GRASS))

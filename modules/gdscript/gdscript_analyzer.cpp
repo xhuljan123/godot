@@ -7910,15 +7910,25 @@ void GDScriptAnalyzer::reduce_subscript(GDScriptParser::SubscriptNode *p_subscri
 					}
 					result_type.kind = GDScriptParser::DataType::VARIANT;
 				}
-			} else if (base_type.is_struct_type() && index_type.is_hard_type() && index_type.is_value_list_type() && ((index_type.kind == GDScriptParser::DataType::BUILTIN && index_type.builtin_type == Variant::STRING) || base_type.has_int_struct_keys())) {
-				// Struct access with a `KeysOf`/`List` key of strings (`value[key]`). Every accepted key must exist in the struct.
+			} else if (base_type.is_struct_type() && index_type.is_hard_type() && ((index_type.is_value_list_type() && ((index_type.kind == GDScriptParser::DataType::BUILTIN && index_type.builtin_type == Variant::STRING) || base_type.has_int_struct_keys())) || (index_type.kind == GDScriptParser::DataType::ENUM && !index_type.is_meta_type && base_type.has_int_struct_keys()))) {
+				// Struct access with a `KeysOf`/`List` key of strings (`value[key]`), or an enum-typed key for int keys
+				// (`DictionaryWithKeys[ValuesOf[MyEnum], T]` indexed with a `MyEnum` variable or parameter, whose possible
+				// values are the values of the enum). Every accepted key must exist in the struct.
 				// If all of them have the same type, the result has it as a weak type: known for completion, but the
 				// access stays a regular dictionary access, checked at runtime when assigned to a typed variable.
+				Vector<Variant> index_keys;
+				if (index_type.kind == GDScriptParser::DataType::ENUM) {
+					for (const KeyValue<StringName, int64_t> &E : index_type.enum_values) {
+						index_keys.push_back(E.value);
+					}
+				} else {
+					index_keys = index_type.value_list_values;
+				}
 				GDScriptParser::DataType common_type;
 				bool has_common_type = true;
 				bool all_keys_exist = true;
-				for (int i = 0; i < index_type.value_list_values.size(); i++) {
-					const Variant &key = index_type.value_list_values[i];
+				for (int i = 0; i < index_keys.size(); i++) {
+					const Variant &key = index_keys[i];
 					const int key_index = base_type.find_struct_key_value(key);
 					if (key_index < 0) {
 						push_error(vformat(R"(Key %s of "%s" does not exist in struct type "%s".)", key.get_construct_string(), index_type.to_string(), base_type.to_string()), p_subscript->index);
@@ -7934,7 +7944,11 @@ void GDScriptAnalyzer::reduce_subscript(GDScriptParser::SubscriptNode *p_subscri
 				}
 				if (all_keys_exist && has_common_type && common_type.is_set() && !common_type.is_variant()) {
 					result_type = common_type;
-					result_type.type_source = GDScriptParser::DataType::INFERRED;
+					if (base_type.dictionary_with_keys_source.is_empty()) {
+						result_type.type_source = GDScriptParser::DataType::INFERRED;
+					}
+					// Else a `DictionaryWithKeys` has all of its keys, and its values are checked when it's assigned,
+					// so the type is known (like with a constant key) and can be inferred (`var cost := costs[tile]`).
 				} else {
 					result_type.kind = GDScriptParser::DataType::VARIANT;
 				}
