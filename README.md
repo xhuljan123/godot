@@ -1,76 +1,20 @@
-# Godot Engine
+## About this fork
 
-<p align="center">
-  <a href="https://godotengine.org">
-    <img src="misc/logo/logo_outlined.svg" width="400" alt="Godot Engine logo">
-  </a>
-</p>
+This is a custom build of Godot Engine 4.8 (beta) that adds a set of GDScript language extensions on top of upstream Godot.
+The goal is TypeScript-like static typing for GDScript: more mistakes are caught in the script editor while you type,
+instead of at runtime.
 
-## 2D and 3D cross-platform game engine
+Highlights:
 
-**[Godot Engine](https://godotengine.org) is a feature-packed, cross-platform
-game engine to create 2D and 3D games from a unified interface.** It provides a
-comprehensive set of [common tools](https://godotengine.org/features), so that
-users can focus on making games without having to reinvent the wheel. Games can
-be exported with one click to a number of platforms, including the major desktop
-platforms (Linux, macOS, Windows), mobile platforms (Android, iOS), as well as
-Web-based platforms and [consoles](https://godotengine.org/consoles).
+- **Struct types and type aliases**: `type Player = Struct[{ name: String, hp?: int }]`, with required, optional and default keys.
+- **Utility types**: `Partial`, `Required`, `Omit`, `Pick`, `StructFromClass`, `KeysOf`, `ValuesOf`, `DictionaryWithKeys`, `List`, `NestedArray`/`NestedDictionary`, and more.
+- **Typed callables**: `Callable[int, String][bool]`, `FunctionArgType`, and `BoundCallable`.
+- **Type inference**: `TypeOf[value]` and `Infer[param]`, which types a function's return value or another parameter from the arguments at each call.
+- **Syntax additions**: optional chaining (`player?.stats?.hp`) and block comments.
+- **New classes and functions**: `StructRef`, `Callable.bind_strict()`, `inferType()`, `mergeObjects()`, `parseOptional()`, `load_file()`.
+- **Stricter checks**: an optional warning when a `match` on an enum doesn't handle every value.
+- **Editor support**: syntax highlighting, code completion, hover tooltips, argument hints and generated docs for all of the above.
 
-## Free, open source and community-driven
+Struct types are plain `Dictionary` values at runtime, and the other new types compile to their regular runtime types.
 
-Godot is completely free and open source under the very permissive [MIT license](https://godotengine.org/license).
-No strings attached, no royalties, nothing. The users' games are theirs, down
-to the last line of engine code. Godot's development is fully independent and
-community-driven, empowering users to help shape their engine to match their
-expectations. It is supported by the [Godot Foundation](https://godot.foundation/)
-not-for-profit.
-
-Before being open sourced in [February 2014](https://github.com/godotengine/godot/commit/0b806ee0fc9097fa7bda7ac0109191c9c5e0a1ac),
-Godot had been developed by [Juan Linietsky](https://github.com/reduz) and
-[Ariel Manzur](https://github.com/punto-) for several years as an in-house
-engine, used to publish several work-for-hire titles.
-
-![Screenshot of a 3D scene in the Godot Engine editor](https://raw.githubusercontent.com/godotengine/godot-design/master/screenshots/editor_tps_demo_1920x1080.jpg)
-
-## Getting the engine
-
-### Binary downloads
-
-Official binaries for the Godot editor and the export templates can be found
-[on the Godot website](https://godotengine.org/download).
-
-### Compiling from source
-
-[See the official docs](https://docs.godotengine.org/en/latest/engine_details/development/compiling)
-for compilation instructions for every supported platform.
-
-## Community and contributing
-
-Godot is not only an engine but an ever-growing community of users and engine
-developers. The main community channels are listed [on the homepage](https://godotengine.org/community).
-
-The best way to get in touch with the core engine developers is to join the
-[Godot Contributors Chat](https://chat.godotengine.org).
-
-To get started contributing to the project, see the [contributing guide](CONTRIBUTING.md).
-This document also includes guidelines for reporting bugs.
-
-## Documentation and demos
-
-The official documentation is hosted on [Read the Docs](https://docs.godotengine.org).
-It is maintained by the Godot community in its own [GitHub repository](https://github.com/godotengine/godot-docs).
-
-The [class reference](https://docs.godotengine.org/en/latest/classes/)
-is also accessible from the Godot editor.
-
-We also maintain official demos in their own [GitHub repository](https://github.com/godotengine/godot-demo-projects)
-as well as the [Asset Store](https://store.godotengine.org/).
-
-There are also a number of other
-[learning resources](https://docs.godotengine.org/en/latest/community/tutorials.html)
-provided by the community, such as text and video tutorials, demos, etc.
-Consult the [community channels](https://godotengine.org/community)
-for more information.
-
-[![Code Triagers Badge](https://www.codetriage.com/godotengine/godot/badges/users.svg)](https://www.codetriage.com/godotengine/godot)
-[![Translate on Weblate](https://hosted.weblate.org/widgets/godot-engine/-/godot/svg-badge.svg)](https://hosted.weblate.org/engage/godot-engine/?utm_source=widget)
+See the [CHANGELOG](CHANGELOG.md) for the full list of changes, with examples.
