@@ -1,3 +1,9 @@
+<p align="center">
+  <a href="https://godotengine.org">
+    <img src="misc/logo/logo_outlined.svg" width="400" alt="Godot Engine logo">
+  </a>
+</p>
+
 ## About this fork
 
 This is a custom build of Godot Engine 4.8 (beta) that adds a set of GDScript language extensions on top of upstream Godot.
