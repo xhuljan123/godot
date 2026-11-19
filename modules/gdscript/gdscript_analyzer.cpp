@@ -4520,7 +4520,8 @@ void GDScriptAnalyzer::update_dictionary_literal_element_type(GDScriptParser::Di
 		if (key_element_node->type == GDScriptParser::Node::IDENTIFIER && expected_key_type.is_value_list_type() && p_dictionary->style == GDScriptParser::DictionaryNode::PYTHON_DICT) {
 			// `Dictionary[List["foo", "bar"], int]`: an unknown name used as key (`{ foo: 1 }`) is the key name, like in a struct literal.
 			GDScriptParser::IdentifierNode *identifier = static_cast<GDScriptParser::IdentifierNode *>(key_element_node);
-			if (pending_struct_key_errors.has(identifier) && expected_key_type.has_value_list_value(String(identifier->name))) {
+			const PendingStructKey *pending = pending_struct_key_errors.getptr(identifier);
+			if (pending != nullptr && pending->unresolved && expected_key_type.has_value_list_value(String(identifier->name))) {
 				pending_struct_key_errors.erase(identifier);
 				identifier->is_constant = true;
 				identifier->reduced_value = String(identifier->name);
@@ -5568,6 +5569,10 @@ void GDScriptAnalyzer::flush_pending_struct_key_errors() {
 			parser->pending_warnings.push_back(warning);
 		}
 #endif // DEBUG_ENABLED
+		// Not used as a key name: the key is an expression after all, so its use of `self` stands.
+		for (GDScriptParser::LambdaNode *lambda : E.value.self_lambdas) {
+			lambda->use_self = true;
+		}
 	}
 	pending_struct_key_errors.clear();
 }
@@ -6700,6 +6705,13 @@ void GDScriptAnalyzer::reduce_dictionary(GDScriptParser::DictionaryNode *p_dicti
 #ifdef DEBUG_ENABLED
 				const int warning_count = parser->pending_warnings.size();
 #endif // DEBUG_ENABLED
+				// Enclosing lambdas not using `self` yet, so the mark from this key alone can be held back.
+				LocalVector<GDScriptParser::LambdaNode *> lambdas_without_self;
+				for (GDScriptParser::LambdaNode *lambda = current_lambda; lambda != nullptr; lambda = lambda->parent_lambda) {
+					if (!lambda->use_self) {
+						lambdas_without_self.push_back(lambda);
+					}
+				}
 				reduce_expression(element.key);
 				// Only defer diagnostics located on the key itself. Resolving the identifier may analyze other
 				// members (e.g. a member variable with the same name), and their errors must not be lost.
@@ -6709,6 +6721,12 @@ void GDScriptAnalyzer::reduce_dictionary(GDScriptParser::DictionaryNode *p_dicti
 				};
 				PendingStructKey deferred;
 				bool has_deferred = false;
+				for (GDScriptParser::LambdaNode *lambda : lambdas_without_self) {
+					if (lambda->use_self) {
+						lambda->use_self = false;
+						deferred.self_lambdas.push_back(lambda);
+					}
+				}
 				{
 					List<GDScriptParser::ParserError>::Element *E = parser->errors.front();
 					for (int i = 0; i < error_count && E; i++) {
@@ -6741,7 +6759,8 @@ void GDScriptAnalyzer::reduce_dictionary(GDScriptParser::DictionaryNode *p_dicti
 					}
 				}
 #endif // DEBUG_ENABLED
-				if (has_deferred) {
+				deferred.unresolved = has_deferred;
+				if (has_deferred || !deferred.self_lambdas.is_empty()) {
 					pending_struct_key_errors[static_cast<GDScriptParser::IdentifierNode *>(element.key)] = deferred;
 				}
 			} else {

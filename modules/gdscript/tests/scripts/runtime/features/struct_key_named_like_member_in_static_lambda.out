@@ -1,0 +1,7 @@
+GDTEST_OK
+1 static
+2 nested
+{ "size": 3, "label": 4 }
+6 static func
+7 instance
+{ 5: "value" }

@@ -67,11 +67,15 @@ class GDScriptAnalyzer {
 	// Bare identifier keys in dictionary literals (`{ key: value }`) that could not be resolved as expressions.
 	// They are valid if the literal is used where a `Struct[...]` is expected (TypeScript-like syntax),
 	// so their errors are only reported if that doesn't happen.
+	// Resolving the key as an expression may also mark the enclosing lambdas as using `self` (e.g. a key named like a
+	// member variable). That mark is held back too: dropped if the key turns out to be a key name, applied otherwise.
 	struct PendingStructKey {
 		List<GDScriptParser::ParserError> errors;
 #ifdef DEBUG_ENABLED
 		List<GDScriptParser::PendingWarning> warnings;
 #endif // DEBUG_ENABLED
+		LocalVector<GDScriptParser::LambdaNode *> self_lambdas;
+		bool unresolved = false; // The key could not be resolved as an expression (it has deferred diagnostics).
 	};
 	HashMap<GDScriptParser::IdentifierNode *, PendingStructKey> pending_struct_key_errors;
 
