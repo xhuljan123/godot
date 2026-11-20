@@ -340,8 +340,18 @@ void GDScriptCompiler::_write_optional_chain_check(CodeGen &codegen, const GDScr
 	GDScriptDataType bool_type;
 	bool_type.kind = GDScriptDataType::BUILTIN;
 	bool_type.builtin_type = Variant::BOOL;
+	// A Callable or Signal is never null: an unset one is empty (`Callable()`, `Signal()`). When the base is typed as
+	// one, compare it to an empty value instead, so `on_done?.call()` skips a callable that was never set.
+	Variant empty_value;
+	if (p_base.type.has_type() && p_base.type.kind == GDScriptDataType::BUILTIN) {
+		if (p_base.type.builtin_type == Variant::CALLABLE) {
+			empty_value = Callable();
+		} else if (p_base.type.builtin_type == Variant::SIGNAL) {
+			empty_value = Signal();
+		}
+	}
 	GDScriptCodeGenerator::Address is_not_null = codegen.add_temporary(bool_type);
-	gen->write_binary_operator(is_not_null, Variant::OP_NOT_EQUAL, p_base, codegen.add_constant(Variant()));
+	gen->write_binary_operator(is_not_null, Variant::OP_NOT_EQUAL, p_base, codegen.add_constant(empty_value));
 	gen->write_if(is_not_null);
 	gen->pop_temporary();
 	codegen.optional_chain_open_ifs++;
