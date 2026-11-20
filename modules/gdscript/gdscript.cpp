@@ -2528,23 +2528,21 @@ void GDScriptLanguage::profiling_collate_native_call_data(bool p_accumulated) {
 #endif
 }
 
+// Number of base scripts above `p_script`.
+static int _get_inheritance_depth(const GDScript *p_script) {
+	int depth = 0;
+	for (const GDScript *base = p_script->get_base().ptr(); base; base = base->get_base().ptr()) {
+		depth++;
+	}
+	return depth;
+}
+
 struct GDScriptDepSort {
-	//must support sorting so inheritance works properly (parent must be reloaded first)
+	// Parents must be reloaded before the scripts inheriting them. Sort by inheritance depth: unlike "A is a base
+	// of B" (which leaves unrelated scripts "equal" while related ones are not, so it isn't a strict weak ordering
+	// and the sort can put a script before its base), this orders every base before everything inheriting it.
 	bool operator()(const Ref<GDScript> &A, const Ref<GDScript> &B) const {
-		if (A == B) {
-			return false; //shouldn't happen but..
-		}
-		const GDScript *I = B->get_base().ptr();
-		while (I) {
-			if (I == A.ptr()) {
-				// A is a base of B
-				return true;
-			}
-
-			I = I->get_base().ptr();
-		}
-
-		return false; //not a base
+		return _get_inheritance_depth(A.ptr()) < _get_inheritance_depth(B.ptr());
 	}
 };
 
@@ -2604,7 +2602,12 @@ void GDScriptLanguage::reload_scripts(const Array &p_scripts) {
 	scripts.sort_custom<GDScriptDepSort>(); //update in inheritance dependency order
 
 	for (Ref<GDScript> &scr : scripts) {
-		bool reload = p_scripts.has(scr) || to_reload.has(scr->get_base());
+		// Reload the requested scripts and everything inheriting them (at any depth), so instances of subclasses
+		// get their members moved to the new layout too.
+		bool reload = false;
+		for (GDScript *current = scr.ptr(); current && !reload; current = current->get_base().ptr()) {
+			reload = p_scripts.has(Ref<GDScript>(current));
+		}
 
 		if (!reload) {
 			continue;

@@ -113,6 +113,79 @@ TEST_CASE("[Modules][GDScript] Loading keeps ResourceCache and GDScriptCache in 
 	CHECK(TestGDScriptCacheAccessor::has_full(path));
 }
 
+TEST_CASE("[Modules][GDScript] Reloading a base script reloads every script inheriting it") {
+	GDScriptLanguage::get_singleton()->init();
+
+	const auto write = [](const String &p_path, const String &p_code) {
+		Ref<FileAccess> fa = FileAccess::open(p_path, FileAccess::ModeFlags::WRITE);
+		fa->store_string(p_code);
+		fa->close();
+	};
+	const String base_code = "extends RefCounted\nvar base_value := 1\nfunc set_base(value: int) -> void:\n\tbase_value = value\n";
+	// New members in the base move every inherited member.
+	const String new_base_code = "extends RefCounted\nvar added_a := 10\nvar added_b := 11\n" + base_code.trim_prefix("extends RefCounted\n");
+
+	// Chains base <- mid <- leaf among many unrelated scripts. Sorting the scripts by "is a base of" alone (not a
+	// strict weak ordering) could leave subclasses before their base, so they were skipped and their instances kept
+	// the old member layout while the base's code used the new one.
+	const int chain_count = 10;
+	Vector<Ref<GDScript>> scripts;
+	Vector<Ref<GDScript>> bases;
+	Vector<Ref<RefCounted>> objects;
+	Vector<Variant> rngs;
+	for (int i = 0; i < 200; i++) {
+		const String path = TestUtils::get_temp_path(vformat("gdscript_reload_unrelated_%d.gd", i));
+		write(path, vformat("extends RefCounted\nvar value_%d := %d\n", i, i));
+		scripts.push_back(ResourceLoader::load(path));
+
+		// Each chain is loaded one script at a time, base first, with unrelated scripts loaded in between (like a
+		// base class used early, its subclasses only later).
+		const int chain = i / 20;
+		const String base_path = TestUtils::get_temp_path(vformat("gdscript_reload_base_%d.gd", chain));
+		const String mid_path = TestUtils::get_temp_path(vformat("gdscript_reload_mid_%d.gd", chain));
+		const String leaf_path = TestUtils::get_temp_path(vformat("gdscript_reload_leaf_%d.gd", chain));
+		switch (i % 20) {
+			case 2: {
+				write(base_path, base_code);
+				bases.push_back(ResourceLoader::load(base_path));
+			} break;
+			case 9: {
+				write(mid_path, vformat("extends \"%s\"\nvar rng := RandomNumberGenerator.new()\nvar mid_value := 2\n", base_path));
+				scripts.push_back(ResourceLoader::load(mid_path));
+			} break;
+			case 16: {
+				write(leaf_path, vformat("extends \"%s\"\nvar leaf_value := 3\n", mid_path));
+				Ref<GDScript> leaf = ResourceLoader::load(leaf_path);
+				REQUIRE(leaf.is_valid());
+				Ref<RefCounted> object = memnew(RefCounted);
+				object->set_script(leaf);
+				REQUIRE(object->get_script_instance() != nullptr);
+				objects.push_back(object);
+				rngs.push_back(object->get("rng"));
+			} break;
+		}
+	}
+	REQUIRE(objects.size() == chain_count);
+
+	Array to_reload;
+	for (int chain = 0; chain < chain_count; chain++) {
+		write(bases[chain]->get_path(), new_base_code);
+		to_reload.push_back(bases[chain]);
+	}
+	GDScriptLanguage::get_singleton()->reload_scripts(to_reload);
+
+	for (int chain = 0; chain < chain_count; chain++) {
+		INFO("Chain ", chain);
+		const Ref<RefCounted> &object = objects[chain];
+		object->call("set_base", 5);
+		CHECK(int(object->get("base_value")) == 5);
+		CHECK(object->get("rng") == rngs[chain]);
+		CHECK(int(object->get("mid_value")) == 2);
+		CHECK(int(object->get("leaf_value")) == 3);
+		CHECK(int(object->get("added_a")) == 0); // New members of existing instances are empty, not initialized.
+	}
+}
+
 TEST_CASE("[Modules][GDScript] Validate built-in API") {
 	GDScriptLanguage *lang = GDScriptLanguage::get_singleton();
 
