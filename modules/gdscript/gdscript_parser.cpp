@@ -644,6 +644,7 @@ void GDScriptParser::synchronize() {
 			case GDScriptTokenizer::Token::FOR:
 			case GDScriptTokenizer::Token::WHILE:
 			case GDScriptTokenizer::Token::MATCH:
+			case GDScriptTokenizer::Token::MATCH_ALL:
 			case GDScriptTokenizer::Token::RETURN:
 			case GDScriptTokenizer::Token::ANNOTATION:
 				return;
@@ -2144,6 +2145,10 @@ GDScriptParser::Node *GDScriptParser::parse_statement() {
 			advance();
 			result = parse_match();
 			break;
+		case GDScriptTokenizer::Token::MATCH_ALL:
+			advance();
+			result = parse_match(true);
+			break;
 		case GDScriptTokenizer::Token::BREAK:
 			advance();
 			result = parse_break();
@@ -2478,18 +2483,20 @@ GDScriptParser::IfNode *GDScriptParser::parse_if(const String &p_token) {
 	return n_if;
 }
 
-GDScriptParser::MatchNode *GDScriptParser::parse_match() {
+GDScriptParser::MatchNode *GDScriptParser::parse_match(bool p_is_match_all) {
 	MatchNode *match_node = alloc_node<MatchNode>();
+	match_node->is_match_all = p_is_match_all;
+	const char *keyword = p_is_match_all ? "match_all" : "match";
 
 	match_node->test = parse_expression(false);
 	if (match_node->test == nullptr) {
-		push_error(R"(Expected expression to test after "match".)");
+		push_error(vformat(R"(Expected expression to test after "%s".)", keyword));
 	}
 
-	consume(GDScriptTokenizer::Token::COLON, R"(Expected ":" after "match" expression.)");
-	consume(GDScriptTokenizer::Token::NEWLINE, R"(Expected a newline after "match" statement.)");
+	consume(GDScriptTokenizer::Token::COLON, vformat(R"(Expected ":" after "%s" expression.)", keyword));
+	consume(GDScriptTokenizer::Token::NEWLINE, vformat(R"(Expected a newline after "%s" statement.)", keyword));
 
-	if (!consume(GDScriptTokenizer::Token::INDENT, R"(Expected an indented block after "match" statement.)")) {
+	if (!consume(GDScriptTokenizer::Token::INDENT, vformat(R"(Expected an indented block after "%s" statement.)", keyword))) {
 		complete_extents(match_node);
 		return match_node;
 	}
@@ -2541,9 +2548,10 @@ GDScriptParser::MatchNode *GDScriptParser::parse_match() {
 	}
 	complete_extents(match_node);
 
-	consume(GDScriptTokenizer::Token::DEDENT, R"(Expected an indented block after "match" statement.)");
+	consume(GDScriptTokenizer::Token::DEDENT, vformat(R"(Expected an indented block after "%s" statement.)", keyword));
 
-	if (all_have_return && have_wildcard) {
+	// A `match_all` has a branch for every key (the analyzer reports an error otherwise), like a wildcard.
+	if (all_have_return && (have_wildcard || (p_is_match_all && !match_node->branches.is_empty()))) {
 		current_suite->has_return = true;
 	}
 
@@ -4786,6 +4794,7 @@ GDScriptParser::ParseRule *GDScriptParser::get_rule(GDScriptTokenizer::Token::Ty
 		{ nullptr,                                          nullptr,                                        PREC_NONE }, // PASS,
 		{ nullptr,                                          nullptr,                                        PREC_NONE }, // RETURN,
 		{ nullptr,                                          nullptr,                                        PREC_NONE }, // MATCH,
+		{ nullptr,                                          nullptr,                                        PREC_NONE }, // MATCH_ALL,
 		{ nullptr,                                          nullptr,                                        PREC_NONE }, // WHEN,
 		// Keywords
 		{ nullptr,                                          &GDScriptParser::parse_cast,                 	PREC_CAST }, // AS,
@@ -6847,7 +6856,7 @@ void GDScriptParser::TreePrinter::print_literal(const LiteralNode *p_literal) {
 }
 
 void GDScriptParser::TreePrinter::print_match(const MatchNode *p_match) {
-	push_text("Match ");
+	push_text(p_match->is_match_all ? "MatchAll " : "Match ");
 	print_expression(p_match->test);
 	push_line(" :");
 

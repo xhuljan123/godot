@@ -33,6 +33,7 @@ Table of contents:
   - [self as a type](#self-as-a-type)
 - [Syntax](#syntax)
   - [Optional chaining](#optional-chaining-)
+  - [match_all](#match_all)
   - [Block comments](#block-comments--)
 - [Classes](#classes)
   - [StructRef](#structref)
@@ -583,6 +584,42 @@ static func describe(key: KeysOf[self], value: InferValue[self[key]]) -> String:
 Like `StructFromClass[MyClass]` inside `MyClass`, a member variable can't be typed from the keys of its own class (`var data: StructFromClass[self]` is a cyclic reference): use it in parameters, return types, local variables and type aliases.
 
 ### Syntax
+
+#### match_all
+
+`match_all key:` works like `match`, but it's an error unless every key has a branch (like an exhaustive `switch` in TypeScript). `key` must be typed as an enum or as a list of keys: `KeysOf[...]` gives the keys of a struct, a constant dictionary or a class, and `List[...]` lists them directly.
+
+```gdscript
+enum Foo { KEY_1, KEY_2 }
+var bar: Struct[{ key_1: int, key_2: String }]
+const TEST := { test_key_1 = 1, test_key_2 = "Lorem ipsum" }
+
+func describe(value: Foo) -> String:
+	match_all value: # OK
+		Foo.KEY_1:
+			return "first"
+		Foo.KEY_2:
+			return "second"
+
+func handle(key: KeysOf[bar]) -> void:
+	match_all key: # Error: Missing a branch for the key in "match_all": "key_2".
+		"key_1":
+			pass
+
+func handle_test(key: KeysOf[TEST]) -> void:
+	match_all key:
+		"test_key_1", "test_key_2":
+			pass
+		"KEY_3": # Error: Unknown key "KEY_3" for "match_all": the keys are "test_key_1", "test_key_2".
+			pass
+```
+
+- Patterns must be constant keys: a wildcard (`_`), a binding (`var x`), a variable, an array or a dictionary pattern is an error.
+- A branch with a `when` guard doesn't count as handling its keys, since the guard can fail.
+- Since every key is handled, a function whose `match_all` branches all return always returns (no "Not all code paths return a value" error). A value outside of the keys at runtime (like an int cast to the enum) runs no branch, like `match`.
+- The key source itself is an error with a hint: `match_all Foo:` (use a value of the enum), `match_all bar:` (use a `KeysOf[bar]` key).
+- Engine enums don't require their `*_MAX` value, like for [ENUM_MATCH_NOT_EXHAUSTIVE](#enum_match_not_exhaustive).
+- `match_all` is a keyword only at the start of a statement: it can still be used as a name (`obj.match_all()`).
 
 #### Optional chaining: `?.`
 

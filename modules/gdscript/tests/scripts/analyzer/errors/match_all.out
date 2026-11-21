@@ -1,0 +1,9 @@
+GDTEST_ANALYZER_ERROR
+>> ERROR at line 7: Missing a branch for the key in "match_all": KEY_2.
+>> ERROR at line 13: Unknown key "KEY_3" for "match_all": the keys are KEY_1, KEY_2.
+>> ERROR at line 16: Missing a branch for the key in "match_all": "key_2".
+>> ERROR at line 20: Missing a branch for the key in "match_all": "test_key_2".
+>> ERROR at line 23: "match_all" can't have a wildcard ("_") or binding ("var") pattern: every key needs its own branch.
+>> ERROR at line 25: "match_all" expects a value of the enum, like "match_all value:" with "var value: Foo", but "Foo" is the enum itself.
+>> ERROR at line 28: "match_all" expects a key, like "match_all key:" with "var key: KeysOf[bar]", but "bar" holds the keys instead.
+>> ERROR at line 32: "match_all" expects a value typed as an enum or as a list of keys (like "KeysOf[...]" or "List[...]"), but the value is "int".

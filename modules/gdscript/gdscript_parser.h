@@ -1270,6 +1270,9 @@ public:
 	struct MatchNode : public Node {
 		ExpressionNode *test = nullptr;
 		LocalVector<MatchBranchNode *> branches;
+		// `match_all key:`: like `match`, but the analyzer requires a branch for every key of the type of `key` (an enum,
+		// or a list of keys like `List[...]`/`KeysOf[...]`), and only accepts those keys as patterns.
+		bool is_match_all = false;
 
 		MatchNode() {
 			type = MATCH;
@@ -2016,7 +2019,7 @@ private:
 	ContinueNode *parse_continue();
 	ForNode *parse_for();
 	IfNode *parse_if(const String &p_token = "if");
-	MatchNode *parse_match();
+	MatchNode *parse_match(bool p_is_match_all = false);
 	MatchBranchNode *parse_match_branch();
 	PatternNode *parse_match_pattern(PatternNode *p_root_pattern = nullptr);
 	WhileNode *parse_while();

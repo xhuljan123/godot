@@ -104,6 +104,7 @@ public:
 			PASS,
 			RETURN,
 			MATCH,
+			MATCH_ALL,
 			WHEN,
 			// Keywords
 			AS,

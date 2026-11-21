@@ -99,6 +99,7 @@ static const char *token_names[] = {
 	"pass", // PASS,
 	"return", // RETURN,
 	"match", // MATCH,
+	"match_all", // MATCH_ALL,
 	"when", // WHEN,
 	// Keywords
 	"as", // AS,
@@ -199,6 +200,7 @@ bool GDScriptTokenizer::Token::is_identifier() const {
 	switch (type) {
 		case IDENTIFIER:
 		case MATCH: // Used in String.match().
+		case MATCH_ALL: // New keyword, avoid breaking existing code.
 		case WHEN: // New keyword, avoid breaking existing code.
 		// Allow constants to be treated as regular identifiers.
 		case CONST_PI:
@@ -239,6 +241,7 @@ bool GDScriptTokenizer::Token::is_node_name() const {
 		case TK_IN:
 		case IS:
 		case MATCH:
+		case MATCH_ALL:
 		case NAMESPACE:
 		case NOT:
 		case OR:
@@ -512,6 +515,7 @@ GDScriptTokenizer::Token GDScriptTokenizerText::annotation() {
 	KEYWORD("is", Token::IS) \
 	KEYWORD_GROUP('m') \
 	KEYWORD("match", Token::MATCH) \
+	KEYWORD("match_all", Token::MATCH_ALL) \
 	KEYWORD_GROUP('n') \
 	KEYWORD("namespace", Token::NAMESPACE) \
 	KEYWORD("not", Token::NOT) \

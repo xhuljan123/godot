@@ -4252,9 +4252,138 @@ void GDScriptAnalyzer::resolve_match(GDScriptParser::MatchNode *p_match) {
 		resolve_match_branch(branch, p_match->test);
 	}
 
+	if (p_match->is_match_all) {
+		check_match_all_keys(p_match); // Errors instead of the `ENUM_MATCH_NOT_EXHAUSTIVE` warning.
+		return;
+	}
+
 #ifdef DEBUG_ENABLED
 	check_enum_match_exhaustive(p_match);
 #endif // DEBUG_ENABLED
+}
+
+// `match_all key:`: like `match`, but `key` must be typed as an enum or as a list of keys (`List[...]`, `KeysOf[...]`), and:
+// - every key needs a branch (branches with a `when` guard don't count, since the guard can fail);
+// - patterns must be constant keys: no other value, no wildcard (`_`), binding, array or dictionary pattern.
+// Engine enums don't require their `*_MAX` sentinel value (like `TYPE_MAX`), as for `ENUM_MATCH_NOT_EXHAUSTIVE`.
+void GDScriptAnalyzer::check_match_all_keys(const GDScriptParser::MatchNode *p_match) {
+	if (p_match->test == nullptr) {
+		return; // Error already reported by the parser.
+	}
+	const GDScriptParser::DataType &test_type = p_match->test->type_constraint;
+	if (!test_type.is_set() || test_type.kind == GDScriptParser::DataType::UNRESOLVED) {
+		return; // Error already reported.
+	}
+
+	// The keys, with their names for messages.
+	Vector<Variant> keys;
+	PackedStringArray key_names;
+	const bool is_enum = test_type.kind == GDScriptParser::DataType::ENUM && !test_type.is_meta_type;
+	if (is_enum && !test_type.enum_values.is_empty()) {
+		const bool is_script_enum = test_type.class_type != nullptr || !test_type.script_path.is_empty();
+		for (const KeyValue<StringName, int64_t> &E : test_type.enum_values) {
+			const String value_name = E.key;
+			if (keys.has(E.value) || (!is_script_enum && (value_name == "MAX" || value_name.ends_with("_MAX")))) {
+				continue; // Several names can share a value.
+			}
+			keys.push_back(E.value);
+			key_names.push_back(value_name);
+		}
+	} else if (test_type.is_value_list_type() && !test_type.is_meta_type) {
+		for (const Variant &value : test_type.value_list_values) {
+			keys.push_back(value.get_type() == Variant::STRING_NAME ? Variant(value.operator String()) : value);
+			key_names.push_back(value.get_construct_string());
+		}
+	} else {
+		const String name = p_match->test->type == GDScriptParser::Node::IDENTIFIER ? String(static_cast<GDScriptParser::IdentifierNode *>(p_match->test)->name) : String();
+		const bool is_key_source = test_type.is_struct_type() || (test_type.kind == GDScriptParser::DataType::BUILTIN && test_type.builtin_type == Variant::DICTIONARY);
+		if (test_type.kind == GDScriptParser::DataType::ENUM && test_type.is_meta_type && !name.is_empty()) {
+			// `match_all Foo:` with `enum Foo { ... }`.
+			push_error(vformat(R"*("match_all" expects a value of the enum, like "match_all value:" with "var value: %s", but "%s" is the enum itself.)*", name, name), p_match->test);
+		} else if (is_key_source && !name.is_empty()) {
+			// `match_all bar:` with a struct, or a constant dictionary.
+			push_error(vformat(R"*("match_all" expects a key, like "match_all key:" with "var key: KeysOf[%s]", but "%s" holds the keys instead.)*", name, name), p_match->test);
+		} else {
+			push_error(vformat(R"*("match_all" expects a value typed as an enum or as a list of keys (like "KeysOf[...]" or "List[...]"), but the value is "%s".)*", test_type.to_string()), p_match->test);
+		}
+		return;
+	}
+
+	HashSet<int> handled_keys;
+	for (const GDScriptParser::MatchBranchNode *branch : p_match->branches) {
+		if (branch == nullptr) {
+			continue;
+		}
+		for (const GDScriptParser::PatternNode *pattern : branch->patterns) {
+			if (pattern == nullptr) {
+				continue;
+			}
+			Variant value;
+			bool has_value = false;
+			switch (pattern->pattern_type) {
+				case GDScriptParser::PatternNode::PT_LITERAL:
+					if (pattern->literal != nullptr) {
+						value = pattern->literal->value;
+						has_value = true;
+					}
+					break;
+				case GDScriptParser::PatternNode::PT_EXPRESSION:
+					if (pattern->expression != nullptr && pattern->expression->is_constant) {
+						value = pattern->expression->reduced_value;
+						has_value = true;
+					} else {
+						push_error(R"("match_all" patterns must be constant keys, not variables.)", pattern);
+						continue;
+					}
+					break;
+				case GDScriptParser::PatternNode::PT_WILDCARD:
+				case GDScriptParser::PatternNode::PT_BIND:
+				case GDScriptParser::PatternNode::PT_REST:
+					push_error(R"("match_all" can't have a wildcard ("_") or binding ("var") pattern: every key needs its own branch.)", pattern);
+					continue;
+				default:
+					push_error(R"("match_all" patterns must be keys, not array or dictionary patterns.)", pattern);
+					continue;
+			}
+			if (!has_value) {
+				continue;
+			}
+			if (value.get_type() == Variant::STRING_NAME) {
+				value = value.operator String();
+			}
+
+			int key_index = -1;
+			for (int i = 0; i < keys.size(); i++) {
+				if (keys[i].get_type() == value.get_type() && keys[i] == value) {
+					key_index = i;
+					break;
+				}
+			}
+			if (key_index < 0) {
+				if (is_enum && value.get_type() == Variant::STRING && test_type.enum_values.has(StringName(value.operator String()))) {
+					// `"KEY_1"` instead of `Foo.KEY_1`.
+					const String enum_name = test_type.enum_type != StringName() ? String(test_type.enum_type) + "." : String();
+					push_error(vformat(R"(%s is the name of a value, not a value of the enum: use "%s%s".)", value.get_construct_string(), enum_name, value.operator String()), pattern);
+				} else {
+					push_error(vformat(R"(Unknown key %s for "match_all": the keys are %s.)", value.get_construct_string(), String(", ").join(key_names)), pattern);
+				}
+				continue;
+			}
+			if (branch->guard_body == nullptr) {
+				handled_keys.insert(key_index);
+			}
+		}
+	}
+
+	PackedStringArray missing;
+	for (int i = 0; i < keys.size(); i++) {
+		if (!handled_keys.has(i)) {
+			missing.push_back(key_names[i]);
+		}
+	}
+	if (!missing.is_empty()) {
+		push_error(vformat(R"(Missing %s in "match_all": %s.)", missing.size() == 1 ? "a branch for the key" : "branches for the keys", String(", ").join(missing)), p_match->test);
+	}
 }
 
 #ifdef DEBUG_ENABLED

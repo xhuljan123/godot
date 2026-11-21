@@ -2757,6 +2757,7 @@ Vector<String> GDScriptLanguage::get_reserved_words() const {
 		"for",
 		"if",
 		"match",
+		"match_all",
 		"pass",
 		"return",
 		"when",
@@ -2814,6 +2815,7 @@ bool GDScriptLanguage::is_control_flow_keyword(const String &p_keyword) const {
 			p_keyword == "for" ||
 			p_keyword == "if" ||
 			p_keyword == "match" ||
+			p_keyword == "match_all" ||
 			p_keyword == "pass" ||
 			p_keyword == "return" ||
 			p_keyword == "when" ||
