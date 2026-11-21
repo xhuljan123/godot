@@ -1,0 +1,7 @@
+GDTEST_OK
+a = 2
+b = other
+volume = 0.5
+title = Menu
+volume = 0.25
+title

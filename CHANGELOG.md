@@ -243,7 +243,7 @@ func axis_value(point: Point, axis: KeysOf[Point]) -> float:
 
 Native enums work too (`KeysOf[Node.ProcessMode]`). Using a key of a `KeysOf` type that doesn't exist in the struct being indexed is an error.
 
-A variable, parameter or member of a struct type gives the keys of its type (`KeysOf[foo]` with `var foo: Struct[{ ... }]`).
+A GDScript class gives the names of its (non-static) member variables, inherited ones included (`KeysOf[MyClass]`, like `KeysOf[StructFromClass[MyClass]]`). A variable, parameter or member of a struct type or of a GDScript class gives the keys of its type (`KeysOf[foo]` with `var foo: Struct[{ ... }]` or `var foo: MyClass`).
 
 #### ValuesOf
 
@@ -503,7 +503,7 @@ func _ready():
 
 #### InferValue
 
-`value: InferValue[source[key]]` types a parameter from an **earlier** parameter `key` at each call: `value` must have the type of the value of `source` at the key passed for `key` (like `function set<K extends keyof T>(key: K, value: T[K])` in TypeScript). `source` is a struct type (`Settings`, `Other.Settings`) or a variable, constant or member of a struct type (`foo`, `self.foo`).
+`value: InferValue[source[key]]` types a parameter from an **earlier** parameter `key` at each call: `value` must have the type of the value of `source` at the key passed for `key` (like `function set<K extends keyof T>(key: K, value: T[K])` in TypeScript). `source` is a struct type (`Settings`, `Other.Settings`), a GDScript class (`MyClass`, or `self` for the current class), or a variable, constant or member of one of them (`foo`, `self.foo`). A class is used like [`StructFromClass`](#structfromclass): its (non-static) member variables are the keys, with their declared types.
 
 - A constant key gives the declared type of that key: `set_value("key_1", 1)` checks `1` as an `int`, `set_value("key_2", [1])` checks `[1]` as an `Array[int]`.
 - A key typed as a `List`/`KeysOf` (or an enum, for int keys) gives the type shared by all of its keys, or `Variant` if they don't share one. Any other key gives `Variant` (the key itself is checked by its own parameter type, usually `KeysOf[source]`).
@@ -522,6 +522,25 @@ func _ready():
 	set_value("key_1", [2]) # Error: argument 2 should be "int" but is "Array".
 	set_value("key_3", 1) # Error: "key_3" is not a key of "foo".
 ```
+
+With a class:
+
+```gdscript
+class_name Foo
+
+var a: int = 1
+var b := "test"
+
+func set_value(key: KeysOf[Foo], value: InferValue[self[key]]) -> void:
+	set(key, value)
+
+func _ready():
+	set_value("a", 2) # OK: "value" is an int.
+	set_value("b", "other") # OK: "value" is a String.
+	set_value("a", "2") # Error: argument 2 should be "int" but is "String".
+```
+
+`self` can't be used in static functions: use the class name instead (`InferValue[Foo[key]]`).
 
 ### Syntax
 

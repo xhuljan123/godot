@@ -806,7 +806,7 @@ GDScriptParser::DataType GDScriptAnalyzer::make_value_list_type(const Vector<Var
 // Returns an unset type (after reporting an error) on failure.
 GDScriptParser::DataType GDScriptAnalyzer::resolve_keys_of_type(GDScriptParser::TypeNode *p_type, bool p_values) {
 	const char *name = p_values ? "ValuesOf" : "KeysOf";
-	const String expected = p_values ? String(R"("ValuesOf" expects an enum, a constant dictionary or array, or a variable initialized with one)") : String(R"("KeysOf" expects an enum, a struct type or a constant dictionary)");
+	const String expected = p_values ? String(R"("ValuesOf" expects an enum, a constant dictionary or array, or a variable initialized with one)") : String(R"("KeysOf" expects an enum, a struct type, a GDScript class or a constant dictionary)");
 	GDScriptParser::TypeNode *argument = p_type->get_container_type_or_null(0);
 	if (argument == nullptr) {
 		return GDScriptParser::DataType(); // Error already reported by the parser.
@@ -873,9 +873,11 @@ GDScriptParser::DataType GDScriptAnalyzer::resolve_keys_of_type(GDScriptParser::
 		if (!name_type.is_set() || name_type.kind == GDScriptParser::DataType::UNRESOLVED) {
 			return GDScriptParser::DataType(); // Error already reported.
 		}
-		const bool is_struct_value = !is_constant && !name_type.is_meta_type && name_type.is_struct_type() && !p_values;
+		const bool is_class_value = name_type.kind == GDScriptParser::DataType::CLASS && name_type.class_type != nullptr;
+		const bool is_struct_value = !is_constant && !name_type.is_meta_type && (name_type.is_struct_type() || is_class_value) && !p_values;
 		if (is_struct_value) {
-			// `KeysOf[foo]` with `var foo: Struct[{ ... }]` (a variable, parameter or member of a struct type): the keys of its type.
+			// `KeysOf[foo]` with `var foo: Struct[{ ... }]` or `var foo: MyClass` (a variable, parameter or member of a struct type
+			// or of a GDScript class): the keys of its type.
 			source_type = name_type;
 			has_source_type = true;
 		} else if (!is_constant && !name_type.is_meta_type && last_identifier->variable_source != nullptr && (last_identifier->source == GDScriptParser::IdentifierNode::MEMBER_VARIABLE || last_identifier->source == GDScriptParser::IdentifierNode::LOCAL_VARIABLE || last_identifier->source == GDScriptParser::IdentifierNode::STATIC_VARIABLE)) {
@@ -935,6 +937,12 @@ GDScriptParser::DataType GDScriptAnalyzer::resolve_keys_of_type(GDScriptParser::
 		} else if (source_type.is_struct_type() && !p_values) {
 			for (int i = 0; i < source_type.struct_keys.size(); i++) {
 				values.push_back(source_type.get_struct_key_value(i));
+			}
+		} else if (source_type.kind == GDScriptParser::DataType::CLASS && source_type.class_type != nullptr && !p_values) {
+			// `KeysOf[MyClass]`: the names of its (non-static) member variables, like `KeysOf[StructFromClass[MyClass]]`.
+			const GDScriptParser::DataType class_struct = make_struct_type_from_class(source_type.class_type, argument);
+			for (int i = 0; i < class_struct.struct_keys.size(); i++) {
+				values.push_back(class_struct.get_struct_key_value(i));
 			}
 		} else if (source_type.is_value_list_type()) {
 			values = source_type.value_list_values;
@@ -1191,11 +1199,12 @@ int GDScriptAnalyzer::find_earlier_infer_parameter(GDScriptParser::FunctionNode 
 	return -1;
 }
 
-// `value: InferValue[source[key]]` in the type of the parameter at `p_index`: `source` is a struct type (`Foo`, `Other.Foo`) or a
-// variable, constant or member of a struct type (`foo`, `self.foo`), and `key` an earlier parameter. Stores the struct type in
+// `value: InferValue[source[key]]` in the type of the parameter at `p_index`: `source` is a struct type (`Foo`, `Other.Foo`), a
+// GDScript class (`MyClass`, or `self` for the current class), or a variable, constant or member of one of them (`foo`, `self.foo`),
+// and `key` an earlier parameter. A class is used like `StructFromClass[MyClass]`: its member variables are the keys. Stores the struct type in
 // `infer_value_source_type`, and returns the index of `key` (marked like `Infer` references, see `resolve_infer_parameter_reference()`).
 int GDScriptAnalyzer::resolve_infer_value_reference(GDScriptParser::FunctionNode *p_function, int p_index, GDScriptParser::TypeNode *p_type) {
-	static constexpr const char *expected = R"*("InferValue" expects a struct value or type indexed by an earlier parameter, like "func foo(key: KeysOf[Foo], value: InferValue[Foo[key]])")*";
+	static constexpr const char *expected = R"*("InferValue" expects a struct or a class (value or type, or "self") indexed by an earlier parameter, like "func foo(key: KeysOf[Foo], value: InferValue[Foo[key]])")*";
 	p_type->infer_parameter_index = -2;
 	GDScriptParser::ExpressionNode *argument = p_type->infer_value_expression;
 	if (argument == nullptr) {
@@ -1207,10 +1216,10 @@ int GDScriptAnalyzer::resolve_infer_value_reference(GDScriptParser::FunctionNode
 		return -1;
 	}
 
-	// The source: only identifiers and attribute chains (`foo`, `Other.Foo`, `self.foo`).
+	// The source: only `self`, identifiers and attribute chains (`foo`, `Other.Foo`, `self.foo`).
 	const GDScriptParser::ExpressionNode *node = subscript->base;
 	while (true) {
-		if (node->type == GDScriptParser::Node::IDENTIFIER || (node->type == GDScriptParser::Node::SELF && node != subscript->base)) {
+		if (node->type == GDScriptParser::Node::IDENTIFIER || node->type == GDScriptParser::Node::SELF) {
 			break;
 		}
 		if (node->type == GDScriptParser::Node::SUBSCRIPT) {
@@ -1239,6 +1248,10 @@ int GDScriptAnalyzer::resolve_infer_value_reference(GDScriptParser::FunctionNode
 		return -1; // Error already reported.
 	}
 	source_type = type_from_metatype(source_type);
+	if (source_type.kind == GDScriptParser::DataType::CLASS && source_type.class_type != nullptr) {
+		// `InferValue[self[key]]`, `InferValue[MyClass[key]]`: the member variables of the class.
+		source_type = make_struct_type_from_class(source_type.class_type, subscript->base);
+	}
 	if (!source_type.is_struct_type()) {
 		push_error(vformat(R"(%s, but "%s" is "%s".)", expected, GDScriptParser::type_node_to_string(p_type).trim_prefix("InferValue[").get_slice("[", 0), source_type.to_string()), subscript->base);
 		return -1;
