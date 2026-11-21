@@ -1239,9 +1239,17 @@ int GDScriptAnalyzer::resolve_infer_value_reference(GDScriptParser::FunctionNode
 	}
 
 	// A type annotation doesn't access the value (like `TypeOf`): members can be used in static functions too.
+	// Names are reduced directly (like in `KeysOf`), so a type alias (`type Settings = Struct[...]`) gives its type
+	// instead of the "cannot be used as a value" error of `reduce_expression()`.
 	const bool previous_static_context = static_context;
 	static_context = false;
-	reduce_expression(subscript->base);
+	if (subscript->base->type == GDScriptParser::Node::IDENTIFIER) {
+		reduce_identifier(static_cast<GDScriptParser::IdentifierNode *>(subscript->base), true);
+	} else if (subscript->base->type == GDScriptParser::Node::SUBSCRIPT) {
+		reduce_subscript(static_cast<GDScriptParser::SubscriptNode *>(subscript->base), true);
+	} else {
+		reduce_expression(subscript->base);
+	}
 	static_context = previous_static_context;
 	GDScriptParser::DataType source_type = subscript->base->type_constraint;
 	if (!source_type.is_set() || source_type.kind == GDScriptParser::DataType::UNRESOLVED) {

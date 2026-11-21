@@ -5,4 +5,4 @@ GDTEST_ANALYZER_ERROR
 >> ERROR at line 6: Key "1" does not exist in struct type "DictionaryWithKeys[List[1, 2], String]".
 >> ERROR at line 8: Key 7 (the value of "index") does not exist in struct type "DictionaryWithKeys[List[1, 2], String]".
 >> ERROR at line 9: Cannot assign a value of type "String" to key 2 of type "int".
->> ERROR at line 13: Key 2 of "Tile" does not exist in struct type "DictionaryWithKeys[List[0, 1], float]".
+>> ERROR at line 13: Key 2 of "dictionary_with_keys_int.gd.Tile" does not exist in struct type "DictionaryWithKeys[List[0, 1], float]".
