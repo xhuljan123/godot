@@ -6,3 +6,4 @@ GDTEST_OK
 { &"hp": 10 } { &"hp": 20, &"mp": 5 } { &"hp": 20, &"mp": 5 }
 5
 1
+merged

@@ -753,6 +753,16 @@ var merged := mergeObjects(a, b) # Struct[{ name: String, size: int, color: Colo
 
 Both arguments must be structs (struct-typed values or dictionary literals with name keys).
 
+When the result is used where a struct type is expected (a typed variable, an assignment, a `return`, an argument), it's checked like a dictionary literal: a key that the expected type doesn't have is an error, as well as missing required keys and mismatched values.
+
+```gdscript
+type Foo = Struct[{ key_1 = 2, key_2: String }]
+var bar: Foo = mergeObjects({}, {
+	key_2 = "",
+	key_3 = "", # Error: Key "key_3" does not exist in struct type "Foo".
+})
+```
+
 #### parseOptional
 
 `parseOptional(value, default_value)` returns `value`, or `default_value` if `value` is `null`. With an optional struct key, the result is typed as the key's declared type, and `default_value` must match it.

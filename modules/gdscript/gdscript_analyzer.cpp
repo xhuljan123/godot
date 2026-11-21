@@ -3910,7 +3910,7 @@ void GDScriptAnalyzer::resolve_assignable(GDScriptParser::AssignableNode *p_assi
 			if (has_specified_type && specified_type.has_container_element_type(0)) {
 				update_array_literal_element_type(array, specified_type.get_container_element_type(0));
 			}
-		} else if (p_assignable->initializer->type == GDScriptParser::Node::DICTIONARY) {
+		} else if (p_assignable->initializer->type == GDScriptParser::Node::DICTIONARY || p_assignable->initializer->type == GDScriptParser::Node::CALL) {
 			if (has_specified_type) {
 				update_literal_for_expected_type(p_assignable->initializer, specified_type);
 			}
@@ -4951,6 +4951,49 @@ void GDScriptAnalyzer::update_literal_for_expected_type(GDScriptParser::Expressi
 		} else if (p_expected_type.builtin_type == Variant::DICTIONARY && p_expected_type.has_container_element_types()) {
 			update_dictionary_literal_element_type(static_cast<GDScriptParser::DictionaryNode *>(p_expression), p_expected_type.get_container_element_type_or_variant(0), p_expected_type.get_container_element_type_or_variant(1));
 		}
+	} else if (p_expression->type == GDScriptParser::Node::CALL && p_expected_type.is_struct_type()) {
+		const GDScriptParser::CallNode *call = static_cast<const GDScriptParser::CallNode *>(p_expression);
+		if (merge_objects_calls.has(call)) {
+			check_merge_objects_excess_keys(call, p_expected_type);
+		}
+	}
+}
+
+// `var bar: Foo = mergeObjects(a, b)`: the result is a new dictionary, so like a dictionary literal (and like object literals
+// in TypeScript), it can't have keys that the expected struct type doesn't have, even though struct types otherwise accept
+// values with more keys. Missing and mismatched keys are reported by the usual type check.
+void GDScriptAnalyzer::check_merge_objects_excess_keys(const GDScriptParser::CallNode *p_call, const GDScriptParser::DataType &p_expected_type) {
+	const GDScriptParser::DataType &merged_type = p_call->type_constraint;
+	if (!merged_type.is_struct_type()) {
+		return;
+	}
+	for (int i = 0; i < merged_type.struct_keys.size(); i++) {
+		const StringName &key = merged_type.struct_keys[i];
+		const Variant key_value = merged_type.get_struct_key_value(i);
+		if (p_expected_type.find_struct_key_value(key_value.get_type() == Variant::STRING_NAME ? Variant(key_value.operator String()) : key_value) >= 0) {
+			continue;
+		}
+		// Report it on the key of a dictionary literal argument, if it comes from one (the last argument wins, like the values).
+		const GDScriptParser::Node *error_node = p_call;
+		for (int argument_index = p_call->arguments.size() - 1; argument_index >= 0 && error_node == p_call; argument_index--) {
+			GDScriptParser::ExpressionNode *argument = p_call->arguments[argument_index];
+			if (argument == nullptr) {
+				continue;
+			}
+			if (argument->type == GDScriptParser::Node::DICTIONARY) {
+				GDScriptParser::DictionaryNode *dictionary = static_cast<GDScriptParser::DictionaryNode *>(argument);
+				for (const GDScriptParser::DictionaryNode::Pair &element : dictionary->elements) {
+					StringName element_key;
+					if (get_literal_struct_key_name(dictionary, element.key, element_key) && element_key == key) {
+						error_node = element.key;
+						break;
+					}
+				}
+			} else if (argument->type_constraint.is_struct_type() && argument->type_constraint.find_struct_key(key) >= 0) {
+				error_node = argument;
+			}
+		}
+		push_error(vformat(R"(Key %s does not exist in struct type "%s".)", key_value.get_construct_string(), p_expected_type.to_string()), error_node);
 	}
 }
 
@@ -6346,12 +6389,15 @@ void GDScriptAnalyzer::reduce_call(GDScriptParser::CallNode *p_call, bool p_is_a
 	bool all_is_constant = true;
 	HashMap<int, GDScriptParser::ArrayNode *> arrays; // For array literal to potentially type when passing.
 	HashMap<int, GDScriptParser::DictionaryNode *> dictionaries; // Same, but for dictionaries.
+	HashMap<int, GDScriptParser::CallNode *> merge_calls; // `mergeObjects()` results, checked like dictionary literals.
 	for (uint32_t i = 0; i < p_call->arguments.size(); i++) {
 		reduce_expression(p_call->arguments[i]);
 		if (p_call->arguments[i]->type == GDScriptParser::Node::ARRAY) {
 			arrays[i] = static_cast<GDScriptParser::ArrayNode *>(p_call->arguments[i]);
 		} else if (p_call->arguments[i]->type == GDScriptParser::Node::DICTIONARY) {
 			dictionaries[i] = static_cast<GDScriptParser::DictionaryNode *>(p_call->arguments[i]);
+		} else if (p_call->arguments[i]->type == GDScriptParser::Node::CALL && merge_objects_calls.has(static_cast<GDScriptParser::CallNode *>(p_call->arguments[i]))) {
+			merge_calls[i] = static_cast<GDScriptParser::CallNode *>(p_call->arguments[i]);
 		}
 		all_is_constant = all_is_constant && p_call->arguments[i]->is_constant;
 	}
@@ -6558,6 +6604,9 @@ void GDScriptAnalyzer::reduce_call(GDScriptParser::CallNode *p_call, bool p_is_a
 		} else if (function_name == SNAME("mergeObjects") && GDScriptUtilityFunctions::function_exists(function_name)) {
 			// `mergeObjects(defaults, overrides)`: merging two structs gives a struct with the keys of both.
 			p_call->type_constraint = reduce_merge_objects_call(p_call);
+			if (p_call->type_constraint.is_struct_type()) {
+				merge_objects_calls.insert(p_call); // Checked like a literal against an expected struct type.
+			}
 			return;
 		} else if (function_name == SNAME("load_file") && GDScriptUtilityFunctions::function_exists(function_name)) {
 			// `load_file(path)`: like `load()`, but a constant path must exist, and the result is typed like `preload()`.
@@ -6823,6 +6872,11 @@ void GDScriptAnalyzer::reduce_call(GDScriptParser::CallNode *p_call, bool p_is_a
 			int index = E.key;
 			if (index < par_types.size() && par_types.get(index).is_hard_type() && par_types.get(index).has_container_element_type(0)) {
 				update_array_literal_element_type(E.value, par_types.get(index).get_container_element_type(0));
+			}
+		}
+		for (const KeyValue<int, GDScriptParser::CallNode *> &E : merge_calls) {
+			if (E.key < par_types.size() && par_types.get(E.key).is_hard_type() && par_types.get(E.key).is_struct_type()) {
+				check_merge_objects_excess_keys(E.value, par_types.get(E.key));
 			}
 		}
 		for (const KeyValue<int, GDScriptParser::DictionaryNode *> &E : dictionaries) {

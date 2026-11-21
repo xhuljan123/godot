@@ -120,6 +120,8 @@ class GDScriptAnalyzer {
 	GDScriptParser::DataType reduce_infer_type_call(GDScriptParser::CallNode *p_call);
 	GDScriptParser::DataType reduce_object_argument(GDScriptParser::ExpressionNode *p_argument);
 	GDScriptParser::DataType reduce_merge_objects_call(GDScriptParser::CallNode *p_call);
+	void check_merge_objects_excess_keys(const GDScriptParser::CallNode *p_call, const GDScriptParser::DataType &p_expected_type);
+	HashSet<const GDScriptParser::CallNode *> merge_objects_calls; // `mergeObjects()` calls typed as a struct.
 	GDScriptParser::DataType reduce_parse_optional_call(GDScriptParser::CallNode *p_call);
 	GDScriptParser::DataType reduce_load_file_call(GDScriptParser::CallNode *p_call, const GDScriptParser::DataType &p_default_type);
 

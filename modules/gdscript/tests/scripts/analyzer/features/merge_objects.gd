@@ -28,3 +28,7 @@ func test():
 	var leveled := mergeObjects(base, with_default)
 	var level: int = leveled.level
 	print(level)
+
+	# Assigned to a struct type, the result must have only its keys (missing keys can have a default value).
+	var foo: Struct[{ key_1 = 2, key_2: String }] = mergeObjects({}, { key_2 = "merged" })
+	print(foo.key_2)
