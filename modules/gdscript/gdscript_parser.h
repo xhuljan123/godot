@@ -1608,6 +1608,9 @@ public:
 		bool is_infer_value = false;
 		ExpressionNode *infer_value_expression = nullptr;
 		DataType infer_value_source_type; // The struct type of `source`, once validated.
+		// `InferValue[target[key]]` where `target` is an earlier parameter: its index. The source type is then the type of the
+		// argument passed for it at each call (see `GDScriptAnalyzer::resolve_infer_value_type()`). -1 otherwise.
+		int infer_value_source_parameter_index = -1;
 
 		// `List["foo", "bar", 1]`: the accepted values (constant expressions).
 		bool is_value_list = false;

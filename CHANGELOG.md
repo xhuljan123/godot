@@ -524,6 +524,19 @@ func _ready():
 	set_value("key_3", 1) # Error: "key_3" is not a key of "foo".
 ```
 
+`source` can also be an earlier parameter (usually a `Variant`): then it's typed at each call from the argument passed for it, so one function works on any struct or object. A struct (or a dictionary literal) gives its keys, and a GDScript object its member variables. An argument whose type isn't known statically (an untyped variable, a plain `Dictionary`) skips the check.
+
+```gdscript
+func set_on(target: Variant, key: KeysOf[Infer[target]], value: InferValue[target[key]]) -> void:
+	target[key] = value
+
+func _ready():
+	var settings := Settings.new() # var volume: float, var title: String
+	set_on(settings, "volume", 0.5) # OK: "value" is a float.
+	set_on(settings, "title", 1) # Error: argument 3 should be "String" but is "int".
+	set_on({ count = 1 }, "count", 2) # OK: "value" is an int.
+```
+
 With a class:
 
 ```gdscript

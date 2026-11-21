@@ -1238,6 +1238,27 @@ int GDScriptAnalyzer::resolve_infer_value_reference(GDScriptParser::FunctionNode
 		return -1;
 	}
 
+	p_type->infer_value_source_parameter_index = -1;
+	if (subscript->base->type == GDScriptParser::Node::IDENTIFIER) {
+		// `InferValue[target[key]]` with a parameter `target` (usually a `Variant`): the source is the argument passed for it
+		// at each call, so the function works on any struct or object (see `resolve_infer_value_type()`).
+		const StringName source_name = static_cast<GDScriptParser::IdentifierNode *>(subscript->base)->name;
+		bool is_parameter = false;
+		for (const GDScriptParser::ParameterNode *parameter : p_function->parameters) {
+			is_parameter = is_parameter || (parameter != nullptr && parameter->identifier != nullptr && parameter->identifier->name == source_name);
+		}
+		if (is_parameter) {
+			const int source_index = find_earlier_infer_parameter(p_function, p_index, subscript->base, "InferValue");
+			if (source_index < 0) {
+				return -1;
+			}
+			p_type->infer_value_source_parameter_index = source_index;
+			p_type->infer_value_source_type = GDScriptParser::DataType();
+			p_type->infer_parameter_index = index;
+			return index;
+		}
+	}
+
 	// A type annotation doesn't access the value (like `TypeOf`): members can be used in static functions too.
 	// Names are reduced directly (like in `KeysOf`), so a type alias (`type Settings = Struct[...]`) gives its type
 	// instead of the "cannot be used as a value" error of `reduce_expression()`.
@@ -1274,10 +1295,25 @@ int GDScriptAnalyzer::resolve_infer_value_reference(GDScriptParser::FunctionNode
 // - A key typed as a `List`/`KeysOf` (or an enum, for int keys) gives the type shared by all of its keys. If they don't share a
 //   type, it's `Variant`.
 // - Any other key gives `Variant` (the key itself is checked by the type of its own parameter).
+// With a parameter as source (`InferValue[target[key]]`), the struct is the type of the argument passed for it: a struct (or a
+// dictionary literal), or the member variables of a GDScript object. Any other argument (`Variant`, `Dictionary`) gives `Variant`.
 GDScriptParser::DataType GDScriptAnalyzer::resolve_infer_value_type(GDScriptParser::TypeNode *p_type) {
 	GDScriptParser::DataType variant_type = GDScriptParser::DataType::get_variant_type();
 	variant_type.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
-	const GDScriptParser::DataType &source_type = p_type->infer_value_source_type;
+	GDScriptParser::DataType source_type = p_type->infer_value_source_type;
+	if (p_type->infer_value_source_parameter_index >= 0) {
+		const GDScriptParser::DataType *argument_type = infer_substitution_types != nullptr ? infer_substitution_types->getptr(p_type->infer_value_source_parameter_index) : nullptr;
+		if (argument_type == nullptr) {
+			return variant_type;
+		}
+		source_type = type_from_metatype(*argument_type);
+		if (source_type.kind == GDScriptParser::DataType::CLASS && source_type.class_type != nullptr) {
+			source_type = make_struct_type_from_class(source_type.class_type, p_type);
+		}
+		if (!source_type.is_struct_type()) {
+			return variant_type; // The keys aren't known statically.
+		}
+	}
 	const int parameter_index = p_type->infer_parameter_index;
 
 	Vector<Variant> keys;
@@ -1376,6 +1412,11 @@ void GDScriptAnalyzer::resolve_infer_parameter_template_type(GDScriptParser::Fun
 			is_valid = false;
 		} else if (!referenced.has(index)) {
 			referenced.push_back(index);
+		}
+		// `InferValue[target[key]]`: the argument for `target` is needed at each call too.
+		const int source_index = infer_node->is_infer_value && index >= 0 ? infer_node->infer_value_source_parameter_index : -1;
+		if (source_index >= 0 && !referenced.has(source_index)) {
+			referenced.push_back(source_index);
 		}
 	}
 

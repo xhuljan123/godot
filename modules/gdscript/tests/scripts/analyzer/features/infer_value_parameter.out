@@ -1,0 +1,6 @@
+GDTEST_OK
+volume = 0.5
+title = Menu
+label = start
+count = 2
+anything = [1]
