@@ -98,6 +98,9 @@ class GDScriptAnalyzer {
 	GDScriptParser::DataType resolve_type_of(GDScriptParser::TypeNode *p_type);
 	GDScriptParser::DataType resolve_infer_return_type(GDScriptParser::FunctionNode *p_function);
 	int resolve_infer_parameter_reference(GDScriptParser::FunctionNode *p_function, int p_index, GDScriptParser::TypeNode *p_type);
+	int find_earlier_infer_parameter(GDScriptParser::FunctionNode *p_function, int p_index, GDScriptParser::ExpressionNode *p_argument, const char *p_type_name);
+	int resolve_infer_value_reference(GDScriptParser::FunctionNode *p_function, int p_index, GDScriptParser::TypeNode *p_type);
+	GDScriptParser::DataType resolve_infer_value_type(GDScriptParser::TypeNode *p_type);
 	void resolve_infer_parameter_types(GDScriptParser::FunctionNode *p_function, int p_index);
 	static void collect_infer_type_nodes(GDScriptParser::TypeNode *p_type, LocalVector<GDScriptParser::TypeNode *> &r_nodes);
 	void resolve_infer_parameter_template_type(GDScriptParser::FunctionNode *p_function, int p_index, const LocalVector<GDScriptParser::TypeNode *> &p_infer_nodes);

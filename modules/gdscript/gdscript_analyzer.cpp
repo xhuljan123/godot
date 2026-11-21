@@ -823,7 +823,8 @@ GDScriptParser::DataType GDScriptAnalyzer::resolve_keys_of_type(GDScriptParser::
 	if (argument->is_infer && infer_substitution_types != nullptr && argument->infer_parameter_index >= 0) {
 		const GDScriptParser::DataType *argument_type = infer_substitution_types->getptr(argument->infer_parameter_index);
 		const Variant *argument_value = infer_substitution_values != nullptr ? infer_substitution_values->getptr(argument->infer_parameter_index) : nullptr;
-		if (argument_value != nullptr && (argument_type == nullptr || argument_type->kind != GDScriptParser::DataType::ENUM)) {
+		const bool is_container_value = argument_value != nullptr && (argument_value->get_type() == Variant::DICTIONARY || argument_value->get_type() == Variant::ARRAY);
+		if (is_container_value && (argument_type == nullptr || argument_type->kind != GDScriptParser::DataType::ENUM)) {
 			from_argument_value = true;
 			source_name = GDScriptParser::type_node_to_string(argument);
 			if (argument_value->get_type() == Variant::DICTIONARY) {
@@ -840,7 +841,7 @@ GDScriptParser::DataType GDScriptAnalyzer::resolve_keys_of_type(GDScriptParser::
 		}
 	}
 
-	const bool is_name = !argument->type_chain.is_empty() && argument->container_types.is_empty() && !argument->is_struct && argument->struct_modifier == GDScriptParser::TypeNode::STRUCT_MODIFIER_NONE && !argument->is_value_list && !argument->is_callable_signature && !argument->is_nested_container && !argument->is_infer && !argument->is_type_of;
+	const bool is_name = !argument->type_chain.is_empty() && argument->container_types.is_empty() && !argument->is_struct && argument->struct_modifier == GDScriptParser::TypeNode::STRUCT_MODIFIER_NONE && !argument->is_value_list && !argument->is_callable_signature && !argument->is_nested_container && !argument->is_infer && !argument->is_infer_value && !argument->is_type_of;
 	if (from_argument_value) {
 		// Values collected above.
 	} else if (is_name) {
@@ -872,7 +873,12 @@ GDScriptParser::DataType GDScriptAnalyzer::resolve_keys_of_type(GDScriptParser::
 		if (!name_type.is_set() || name_type.kind == GDScriptParser::DataType::UNRESOLVED) {
 			return GDScriptParser::DataType(); // Error already reported.
 		}
-		if (!is_constant && !name_type.is_meta_type && last_identifier->variable_source != nullptr && (last_identifier->source == GDScriptParser::IdentifierNode::MEMBER_VARIABLE || last_identifier->source == GDScriptParser::IdentifierNode::LOCAL_VARIABLE || last_identifier->source == GDScriptParser::IdentifierNode::STATIC_VARIABLE)) {
+		const bool is_struct_value = !is_constant && !name_type.is_meta_type && name_type.is_struct_type() && !p_values;
+		if (is_struct_value) {
+			// `KeysOf[foo]` with `var foo: Struct[{ ... }]` (a variable, parameter or member of a struct type): the keys of its type.
+			source_type = name_type;
+			has_source_type = true;
+		} else if (!is_constant && !name_type.is_meta_type && last_identifier->variable_source != nullptr && (last_identifier->source == GDScriptParser::IdentifierNode::MEMBER_VARIABLE || last_identifier->source == GDScriptParser::IdentifierNode::LOCAL_VARIABLE || last_identifier->source == GDScriptParser::IdentifierNode::STATIC_VARIABLE)) {
 			// A variable initialized with a constant dictionary or array literal: use its initial value.
 			GDScriptParser::ExpressionNode *initializer = last_identifier->variable_source->initializer;
 			if (initializer != nullptr && (initializer->type == GDScriptParser::Node::DICTIONARY || initializer->type == GDScriptParser::Node::ARRAY)) {
@@ -889,7 +895,9 @@ GDScriptParser::DataType GDScriptAnalyzer::resolve_keys_of_type(GDScriptParser::
 				}
 			}
 		}
-		if (name_type.is_meta_type) {
+		if (is_struct_value) {
+			// Source type set above.
+		} else if (name_type.is_meta_type) {
 			source_type = type_from_metatype(name_type);
 			has_source_type = true;
 		} else if (is_constant && value.get_type() == Variant::DICTIONARY) {
@@ -1130,6 +1138,9 @@ GDScriptParser::DataType GDScriptAnalyzer::resolve_infer_return_type(GDScriptPar
 // `Infer[name]` in the type of the parameter at `p_index`: returns the index of the parameter `name`, which must come before it.
 // Marks `p_type` as validated (`infer_parameter_index`), or as already reported (-2) so `resolve_datatype()` doesn't report it again.
 int GDScriptAnalyzer::resolve_infer_parameter_reference(GDScriptParser::FunctionNode *p_function, int p_index, GDScriptParser::TypeNode *p_type) {
+	if (p_type->is_infer_value) {
+		return resolve_infer_value_reference(p_function, p_index, p_type);
+	}
 	p_type->infer_parameter_index = -2;
 	GDScriptParser::ExpressionNode *argument = p_type->infer_expression;
 	if (argument == nullptr) {
@@ -1140,8 +1151,18 @@ int GDScriptAnalyzer::resolve_infer_parameter_reference(GDScriptParser::Function
 		push_error(vformat(R"*("Infer" in the type of parameter "%s" expects the name of an earlier parameter, like "func foo(a, b: Array[Infer[a]])".)*", parameter_name), argument);
 		return -1;
 	}
+	const int index = find_earlier_infer_parameter(p_function, p_index, argument, "Infer");
+	if (index >= 0) {
+		p_type->infer_parameter_index = index;
+	}
+	return index;
+}
 
-	const StringName name = static_cast<GDScriptParser::IdentifierNode *>(argument)->name;
+// The parameter named by `p_argument` (an identifier) for `Infer`/`InferValue` (`p_type_name`) in the type of the parameter at
+// `p_index`. It must be a regular parameter that comes before it. Returns its index, or -1 after reporting an error.
+int GDScriptAnalyzer::find_earlier_infer_parameter(GDScriptParser::FunctionNode *p_function, int p_index, GDScriptParser::ExpressionNode *p_argument, const char *p_type_name) {
+	const StringName parameter_name = p_function->parameters[p_index]->identifier->name;
+	const StringName name = static_cast<GDScriptParser::IdentifierNode *>(p_argument)->name;
 	for (int i = 0; i < (int)p_function->parameters.size(); i++) {
 		GDScriptParser::ParameterNode *parameter = p_function->parameters[i];
 		if (parameter == nullptr || parameter->identifier == nullptr || parameter->identifier->name != name) {
@@ -1149,26 +1170,140 @@ int GDScriptAnalyzer::resolve_infer_parameter_reference(GDScriptParser::Function
 		}
 		if (i >= p_index) {
 			if (i == p_index) {
-				push_error(vformat(R"("Infer" in the type of parameter "%s" cannot refer to the parameter itself. Use an earlier parameter.)", parameter_name), argument);
+				push_error(vformat(R"("%s" in the type of parameter "%s" cannot refer to the parameter itself. Use an earlier parameter.)", p_type_name, parameter_name), p_argument);
 			} else {
-				push_error(vformat(R"("Infer" in the type of parameter "%s" can only refer to an earlier parameter, but "%s" comes after it.)", parameter_name, name), argument);
+				push_error(vformat(R"("%s" in the type of parameter "%s" can only refer to an earlier parameter, but "%s" comes after it.)", p_type_name, parameter_name, name), p_argument);
 			}
 			return -1;
 		}
 		parameter->usages++; // A parameter type depends on it: no "unused parameter" warning.
-		argument->type_constraint = parameter->type_constraint; // For hover tooltips.
-		p_type->infer_parameter_index = i;
+		p_argument->type_constraint = parameter->type_constraint; // For hover tooltips.
 		return i;
 	}
 
 	if (p_function->rest_parameter != nullptr && p_function->rest_parameter->identifier != nullptr && p_function->rest_parameter->identifier->name == name) {
-		push_error(vformat(R"("Infer" cannot use the rest parameter "%s". Use a regular parameter instead.)", name), argument);
+		push_error(vformat(R"("%s" cannot use the rest parameter "%s". Use a regular parameter instead.)", p_type_name, name), p_argument);
 	} else if (p_function->identifier != nullptr) {
-		push_error(vformat(R"*("Infer" expects the name of a parameter of the function, but "%s" is not a parameter of "%s()".)*", name, p_function->identifier->name), argument);
+		push_error(vformat(R"*("%s" expects the name of a parameter of the function, but "%s" is not a parameter of "%s()".)*", p_type_name, name, p_function->identifier->name), p_argument);
 	} else {
-		push_error(vformat(R"("Infer" expects the name of a parameter of the function, but "%s" is not a parameter of this function.)", name), argument);
+		push_error(vformat(R"("%s" expects the name of a parameter of the function, but "%s" is not a parameter of this function.)", p_type_name, name), p_argument);
 	}
 	return -1;
+}
+
+// `value: InferValue[source[key]]` in the type of the parameter at `p_index`: `source` is a struct type (`Foo`, `Other.Foo`) or a
+// variable, constant or member of a struct type (`foo`, `self.foo`), and `key` an earlier parameter. Stores the struct type in
+// `infer_value_source_type`, and returns the index of `key` (marked like `Infer` references, see `resolve_infer_parameter_reference()`).
+int GDScriptAnalyzer::resolve_infer_value_reference(GDScriptParser::FunctionNode *p_function, int p_index, GDScriptParser::TypeNode *p_type) {
+	static constexpr const char *expected = R"*("InferValue" expects a struct value or type indexed by an earlier parameter, like "func foo(key: KeysOf[Foo], value: InferValue[Foo[key]])")*";
+	p_type->infer_parameter_index = -2;
+	GDScriptParser::ExpressionNode *argument = p_type->infer_value_expression;
+	if (argument == nullptr) {
+		return -1; // Error already reported by the parser.
+	}
+	GDScriptParser::SubscriptNode *subscript = argument->type == GDScriptParser::Node::SUBSCRIPT ? static_cast<GDScriptParser::SubscriptNode *>(argument) : nullptr;
+	if (subscript == nullptr || subscript->is_attribute || subscript->is_optional || subscript->base == nullptr || subscript->index == nullptr || subscript->index->type != GDScriptParser::Node::IDENTIFIER) {
+		push_error(vformat(R"(%s.)", expected), argument);
+		return -1;
+	}
+
+	// The source: only identifiers and attribute chains (`foo`, `Other.Foo`, `self.foo`).
+	const GDScriptParser::ExpressionNode *node = subscript->base;
+	while (true) {
+		if (node->type == GDScriptParser::Node::IDENTIFIER || (node->type == GDScriptParser::Node::SELF && node != subscript->base)) {
+			break;
+		}
+		if (node->type == GDScriptParser::Node::SUBSCRIPT) {
+			const GDScriptParser::SubscriptNode *attribute = static_cast<const GDScriptParser::SubscriptNode *>(node);
+			if (attribute->is_attribute && !attribute->is_optional && attribute->base != nullptr) {
+				node = attribute->base;
+				continue;
+			}
+		}
+		push_error(vformat(R"(%s.)", expected), subscript->base);
+		return -1;
+	}
+
+	const int index = find_earlier_infer_parameter(p_function, p_index, subscript->index, "InferValue");
+	if (index < 0) {
+		return -1;
+	}
+
+	// A type annotation doesn't access the value (like `TypeOf`): members can be used in static functions too.
+	const bool previous_static_context = static_context;
+	static_context = false;
+	reduce_expression(subscript->base);
+	static_context = previous_static_context;
+	GDScriptParser::DataType source_type = subscript->base->type_constraint;
+	if (!source_type.is_set() || source_type.kind == GDScriptParser::DataType::UNRESOLVED) {
+		return -1; // Error already reported.
+	}
+	source_type = type_from_metatype(source_type);
+	if (!source_type.is_struct_type()) {
+		push_error(vformat(R"(%s, but "%s" is "%s".)", expected, GDScriptParser::type_node_to_string(p_type).trim_prefix("InferValue[").get_slice("[", 0), source_type.to_string()), subscript->base);
+		return -1;
+	}
+	p_type->infer_value_source_type = source_type;
+	p_type->infer_parameter_index = index;
+	return index;
+}
+
+// At a call (see `resolve_infer_parameter_template()`): the type of `InferValue[source[key]]` from the argument passed for `key`.
+// - A constant key gives the declared type of that key of the struct (an error if it isn't a key).
+// - A key typed as a `List`/`KeysOf` (or an enum, for int keys) gives the type shared by all of its keys. If they don't share a
+//   type, it's `Variant`.
+// - Any other key gives `Variant` (the key itself is checked by the type of its own parameter).
+GDScriptParser::DataType GDScriptAnalyzer::resolve_infer_value_type(GDScriptParser::TypeNode *p_type) {
+	GDScriptParser::DataType variant_type = GDScriptParser::DataType::get_variant_type();
+	variant_type.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
+	const GDScriptParser::DataType &source_type = p_type->infer_value_source_type;
+	const int parameter_index = p_type->infer_parameter_index;
+
+	Vector<Variant> keys;
+	String keys_name;
+	const Variant *argument_value = infer_substitution_values != nullptr ? infer_substitution_values->getptr(parameter_index) : nullptr;
+	const GDScriptParser::DataType *argument_type = infer_substitution_types != nullptr ? infer_substitution_types->getptr(parameter_index) : nullptr;
+	if (argument_value != nullptr && (argument_value->get_type() == Variant::STRING || argument_value->get_type() == Variant::STRING_NAME || argument_value->get_type() == Variant::INT)) {
+		keys.push_back(argument_value->get_type() == Variant::STRING_NAME ? Variant(argument_value->operator String()) : *argument_value);
+	} else if (argument_type != nullptr && argument_type->is_value_list_type()) {
+		keys = argument_type->value_list_values;
+		keys_name = argument_type->to_string();
+	} else if (argument_type != nullptr && argument_type->kind == GDScriptParser::DataType::ENUM && !argument_type->is_meta_type && source_type.has_int_struct_keys()) {
+		for (const KeyValue<StringName, int64_t> &E : argument_type->enum_values) {
+			keys.push_back(E.value);
+		}
+		keys_name = argument_type->to_string();
+	}
+	if (keys.is_empty()) {
+		return variant_type;
+	}
+
+	GDScriptParser::DataType common_type;
+	for (int i = 0; i < keys.size(); i++) {
+		const int key_index = source_type.find_struct_key_value(keys[i]);
+		if (key_index < 0) {
+			if (keys_name.is_empty()) {
+				push_error(vformat(R"(Key %s does not exist in struct type "%s".)", keys[i].get_construct_string(), source_type.to_string()), p_type);
+			} else {
+				push_error(vformat(R"(Key %s of "%s" does not exist in struct type "%s".)", keys[i].get_construct_string(), keys_name, source_type.to_string()), p_type);
+			}
+			return variant_type;
+		}
+		// The declared type of the key (an optional key isn't nullable in the struct type itself).
+		const GDScriptParser::DataType key_type = source_type.struct_key_types[key_index];
+		if (i == 0) {
+			common_type = key_type;
+		} else if (key_type.to_string_expanded() != common_type.to_string_expanded()) {
+			return variant_type; // The keys don't share a type.
+		}
+	}
+	if (!common_type.is_set() || common_type.has_no_type()) {
+		return variant_type;
+	}
+	common_type.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
+	common_type.is_constant = false;
+	common_type.is_read_only = false;
+	return common_type;
 }
 
 // Every `Infer[...]` in a type (container types and utility type arguments, struct key types, callable return types).
@@ -1176,7 +1311,7 @@ void GDScriptAnalyzer::collect_infer_type_nodes(GDScriptParser::TypeNode *p_type
 	if (p_type == nullptr) {
 		return;
 	}
-	if (p_type->is_infer) {
+	if (p_type->is_infer || p_type->is_infer_value) {
 		r_nodes.push_back(p_type);
 		return;
 	}
@@ -1325,7 +1460,8 @@ void GDScriptAnalyzer::resolve_infer_parameter_types(GDScriptParser::FunctionNod
 	for (const GDScriptParser::TypeNode *infer_node : infer_nodes) {
 		bool is_direct_element = false;
 		for (const GDScriptParser::TypeNode *element : type->container_types) {
-			is_direct_element = is_direct_element || element == infer_node;
+			// `Array[InferValue[...]]` is resolved at each call like nested types (only `Infer` has the element type path).
+			is_direct_element = is_direct_element || (element == infer_node && !infer_node->is_infer_value);
 		}
 		has_nested_infer = has_nested_infer || !is_direct_element;
 	}
@@ -1408,7 +1544,9 @@ HashSet<int> GDScriptAnalyzer::apply_infer_parameter_types(GDScriptParser::CallN
 				argument_types[parameter_index] = argument_type;
 				if (parameter_index < (int)p_call->arguments.size() && p_call->arguments[parameter_index] != nullptr) {
 					const GDScriptParser::ExpressionNode *argument = p_call->arguments[parameter_index];
-					if (argument->is_constant && (argument->reduced_value.get_type() == Variant::DICTIONARY || argument->reduced_value.get_type() == Variant::ARRAY)) {
+					// Constant dictionaries and arrays for `KeysOf[Infer[a]]`/`ValuesOf[Infer[a]]`, constant keys for `InferValue[source[key]]`.
+					const Variant::Type value_type = argument->reduced_value.get_type();
+					if (argument->is_constant && (value_type == Variant::DICTIONARY || value_type == Variant::ARRAY || value_type == Variant::STRING || value_type == Variant::STRING_NAME || value_type == Variant::INT)) {
 						argument_values[parameter_index] = argument->reduced_value;
 					}
 				}
@@ -1910,6 +2048,26 @@ GDScriptParser::DataType GDScriptAnalyzer::resolve_datatype(GDScriptParser::Type
 		return bad_type;
 	}
 
+	if (p_type->is_infer_value) {
+		if (infer_substitution_types != nullptr && p_type->infer_parameter_index >= 0) {
+			// At a call (see `resolve_infer_parameter_template()`): the type of the value at the key passed as argument.
+			result = resolve_infer_value_type(p_type);
+			result.is_meta_type = true;
+			p_type->resolved_type = result;
+			return result;
+		}
+		if (p_type->infer_parameter_index != -1) {
+			// Validated (or already reported) by `resolve_infer_parameter_types()`. Inside the function, it's a `Variant`.
+			result.kind = GDScriptParser::DataType::VARIANT;
+			result.is_meta_type = true;
+			p_type->resolved_type = result;
+			return result;
+		}
+		push_error(R"*("InferValue" can only be used in the type of a parameter, like "func foo(key: KeysOf[Foo], value: InferValue[Foo[key]])".)*", p_type);
+		p_type->resolved_type = bad_type;
+		return bad_type;
+	}
+
 	if (p_type->is_type_of) {
 		// `TypeOf[value]`: the type of a variable, constant, parameter, member or struct key.
 		result = resolve_type_of(p_type);
@@ -1960,14 +2118,18 @@ GDScriptParser::DataType GDScriptAnalyzer::resolve_datatype(GDScriptParser::Type
 			return bad_type; // Error already reported.
 		}
 
-		if (p_type->struct_modifier == GDScriptParser::TypeNode::STRUCT_MODIFIER_DICTIONARY_WITH_KEYS) {
+		if (p_type->struct_modifier == GDScriptParser::TypeNode::STRUCT_MODIFIER_DICTIONARY_WITH_KEYS || p_type->struct_modifier == GDScriptParser::TypeNode::STRUCT_MODIFIER_RECORD) {
 			// `DictionaryWithKeys[ListType, ValueType]`: a struct type with a required key (of type `ValueType`) for each value
-			// of the list, so dictionaries must have all of them. Like `Record<K, V>` in TypeScript.
+			// of the list, so dictionaries must have all of them.
+			// `Record[ListType, ValueType]`: the same with optional keys, so dictionaries can have any of them (but no other key).
+			// Like `Record<K, V>` in TypeScript.
+			const bool is_record = p_type->struct_modifier == GDScriptParser::TypeNode::STRUCT_MODIFIER_RECORD;
+			const char *modifier_name = is_record ? "Record" : "DictionaryWithKeys";
 			Vector<Variant> keys;
 			if (argument_type.is_value_list_type()) {
 				keys = argument_type.value_list_values;
 			} else {
-				push_error(vformat(R"("DictionaryWithKeys" expects a list of keys (like "List["a", "b"]" or "KeysOf[...]") as first argument, but got "%s".)", argument_type.to_string()), argument);
+				push_error(vformat(R"("%s" expects a list of keys (like "List["a", "b"]" or "KeysOf[...]") as first argument, but got "%s".)", modifier_name, argument_type.to_string()), argument);
 				return bad_type;
 			}
 			GDScriptParser::TypeNode *value_type_node = p_type->get_container_type_or_null(1);
@@ -1978,7 +2140,7 @@ GDScriptParser::DataType GDScriptAnalyzer::resolve_datatype(GDScriptParser::Type
 			if (!value_type.is_set()) {
 				value_type = GDScriptParser::DataType::get_variant_type();
 			} else if (value_type.kind == GDScriptParser::DataType::BUILTIN && value_type.builtin_type == Variant::NIL) {
-				push_error(R"(The value type of "DictionaryWithKeys" cannot be "void" or "null".)", value_type_node);
+				push_error(vformat(R"(The value type of "%s" cannot be "void" or "null".)", modifier_name), value_type_node);
 				value_type = GDScriptParser::DataType::get_variant_type();
 			}
 			value_type.is_constant = false;
@@ -1994,20 +2156,21 @@ GDScriptParser::DataType GDScriptAnalyzer::resolve_datatype(GDScriptParser::Type
 					if (result.find_struct_key_value(key) >= 0) {
 						continue;
 					}
-					result.add_struct_key(StringName(String::num_int64(key.operator int64_t())), value_type, false, false, Variant(), key);
+					result.add_struct_key(StringName(String::num_int64(key.operator int64_t())), value_type, is_record, false, Variant(), key);
 					continue;
 				}
 				if (key.get_type() != Variant::STRING && key.get_type() != Variant::STRING_NAME) {
-					push_error(vformat(R"("DictionaryWithKeys" only supports string and int keys, but %s is "%s".)", key.get_construct_string(), Variant::get_type_name(key.get_type())), argument);
+					push_error(vformat(R"("%s" only supports string and int keys, but %s is "%s".)", modifier_name, key.get_construct_string(), Variant::get_type_name(key.get_type())), argument);
 					return bad_type;
 				}
-				result.add_struct_key(StringName(key.operator String()), value_type, false);
+				result.add_struct_key(StringName(key.operator String()), value_type, is_record);
 			}
 			GDScriptParser::DataType keys_source = argument_type;
 			keys_source.is_constant = false;
 			keys_source.is_read_only = false;
 			result.dictionary_with_keys_source.push_back(keys_source);
 			result.dictionary_with_keys_source.push_back(value_type);
+			result.dictionary_with_keys_is_record = is_record;
 			p_type->resolved_type = result;
 			return result;
 		}
@@ -7963,10 +8126,10 @@ void GDScriptAnalyzer::reduce_subscript(GDScriptParser::SubscriptNode *p_subscri
 				}
 				if (all_keys_exist && has_common_type && common_type.is_set() && !common_type.is_variant()) {
 					result_type = common_type;
-					if (base_type.dictionary_with_keys_source.is_empty()) {
+					if (base_type.dictionary_with_keys_source.is_empty() || base_type.dictionary_with_keys_is_record) {
 						result_type.type_source = GDScriptParser::DataType::INFERRED;
 					}
-					// Else a `DictionaryWithKeys` has all of its keys, and its values are checked when it's assigned,
+					// Else a `DictionaryWithKeys` has all of its keys (a `Record` may not), and its values are checked when it's assigned,
 					// so the type is known (like with a constant key) and can be inferred (`var cost := costs[tile]`).
 				} else {
 					result_type.kind = GDScriptParser::DataType::VARIANT;

@@ -4044,7 +4044,23 @@ GDScriptParser::TypeNode *GDScriptParser::parse_type(bool p_allow_void) {
 		return type;
 	}
 
-	// Utility types: `Partial[StructType]`, `Required[StructType]`, `StructFromClass[ClassType]`, `ExtractExportableVars[ClassType]`, `StructToVariant[StructType]`, `Omit`, `Pick`, `KeysOf[Source]`, `ValuesOf[Source]`, `FunctionArgType[function]` and `DictionaryWithKeys[Keys, Value]`.
+	if (type_element->name == SNAME("InferValue") && check(GDScriptTokenizer::Token::BRACKET_OPEN)) {
+		// `value: InferValue[source[key]]`: typed at each call as the value of `source` at the key passed for `key`.
+		// The argument is parsed as an expression (a subscript). The analyzer validates its shape.
+		push_multiline(true);
+		advance(); // "[".
+		type->is_infer_value = true;
+		type->infer_value_expression = parse_expression(false);
+		if (type->infer_value_expression == nullptr) {
+			push_error(R"(Expected a key access like "source[key]" after "InferValue[".)");
+		}
+		pop_multiline();
+		consume(GDScriptTokenizer::Token::BRACKET_CLOSE, R"(Expected closing "]" after "InferValue" argument.)");
+		complete_extents(type);
+		return type;
+	}
+
+	// Utility types: `Partial[StructType]`, `Required[StructType]`, `StructFromClass[ClassType]`, `ExtractExportableVars[ClassType]`, `StructToVariant[StructType]`, `Omit`, `Pick`, `KeysOf[Source]`, `ValuesOf[Source]`, `FunctionArgType[function]`, `DictionaryWithKeys[Keys, Value]` and `Record[Keys, Value]`.
 	TypeNode::StructModifier struct_modifier = TypeNode::STRUCT_MODIFIER_NONE;
 	if (type_element->name == SNAME("Partial")) {
 		struct_modifier = TypeNode::STRUCT_MODIFIER_PARTIAL;
@@ -4068,6 +4084,8 @@ GDScriptParser::TypeNode *GDScriptParser::parse_type(bool p_allow_void) {
 		struct_modifier = TypeNode::STRUCT_MODIFIER_FUNCTION_ARG_TYPE;
 	} else if (type_element->name == SNAME("DictionaryWithKeys")) {
 		struct_modifier = TypeNode::STRUCT_MODIFIER_DICTIONARY_WITH_KEYS;
+	} else if (type_element->name == SNAME("Record")) {
+		struct_modifier = TypeNode::STRUCT_MODIFIER_RECORD;
 	}
 	if (struct_modifier != TypeNode::STRUCT_MODIFIER_NONE && check(GDScriptTokenizer::Token::BRACKET_OPEN)) {
 		push_multiline(true); // The argument can be a multiline struct type.
@@ -4081,12 +4099,12 @@ GDScriptParser::TypeNode *GDScriptParser::parse_type(bool p_allow_void) {
 		}
 		const bool has_keys_argument = struct_modifier == TypeNode::STRUCT_MODIFIER_PARTIAL || struct_modifier == TypeNode::STRUCT_MODIFIER_REQUIRED || struct_modifier == TypeNode::STRUCT_MODIFIER_OMIT || struct_modifier == TypeNode::STRUCT_MODIFIER_PICK;
 		const bool has_keys_to_pick = struct_modifier == TypeNode::STRUCT_MODIFIER_PICK;
-		if (argument != nullptr && struct_modifier == TypeNode::STRUCT_MODIFIER_DICTIONARY_WITH_KEYS) {
-			// `DictionaryWithKeys[ListType, ValueType]`.
-			if (consume(GDScriptTokenizer::Token::COMMA, R"(Expected "," and the value type after the keys of "DictionaryWithKeys", like "DictionaryWithKeys[List["a", "b"], int]".)")) {
+		if (argument != nullptr && (struct_modifier == TypeNode::STRUCT_MODIFIER_DICTIONARY_WITH_KEYS || struct_modifier == TypeNode::STRUCT_MODIFIER_RECORD)) {
+			// `DictionaryWithKeys[ListType, ValueType]` and `Record[ListType, ValueType]`.
+			if (consume(GDScriptTokenizer::Token::COMMA, vformat(R"(Expected "," and the value type after the keys of "%s", like "%s[List["a", "b"], int]".)", type_element->name, type_element->name))) {
 				TypeNode *value_type = parse_type(false);
 				if (value_type == nullptr) {
-					push_error(R"(Expected value type after "DictionaryWithKeys[Keys,".)");
+					push_error(vformat(R"(Expected value type after "%s[Keys,".)", type_element->name));
 				} else {
 					type->container_types.push_back(value_type);
 				}
@@ -5841,6 +5859,25 @@ String GDScriptParser::type_node_to_string(const TypeNode *p_type) {
 	if (p_type->is_infer) {
 		return vformat("Infer[%s]", expression_to_string(p_type->infer_expression));
 	}
+	if (p_type->is_infer_value) {
+		const ExpressionNode *expression = p_type->infer_value_expression;
+		if (expression != nullptr && expression->type == Node::SUBSCRIPT) {
+			// `InferValue[source[key]]`, `InferValue[Other.source[key]]`.
+			const SubscriptNode *subscript = static_cast<const SubscriptNode *>(expression);
+			PackedStringArray base_names;
+			const ExpressionNode *base = subscript->base;
+			while (base != nullptr && base->type == Node::SUBSCRIPT && static_cast<const SubscriptNode *>(base)->is_attribute) {
+				const SubscriptNode *attribute = static_cast<const SubscriptNode *>(base);
+				base_names.insert(0, attribute->attribute != nullptr ? String(attribute->attribute->name) : String());
+				base = attribute->base;
+			}
+			base_names.insert(0, expression_to_string(base));
+			if (!subscript->is_attribute) {
+				return vformat("InferValue[%s[%s]]", String(".").join(base_names), expression_to_string(subscript->index));
+			}
+		}
+		return vformat("InferValue[%s]", expression_to_string(expression));
+	}
 	if (p_type->is_type_of) {
 		return vformat("TypeOf[%s]", expression_to_string(p_type->type_of_expression));
 	}
@@ -5945,7 +5982,7 @@ String GDScriptParser::DataType::to_string_expanded() const {
 				return vformat(is_nested_container ? "NestedDictionary[%s, %s]" : "Dictionary[%s, %s]", get_container_element_type_or_variant(0).to_string(), get_container_element_type_or_variant(1).to_string());
 			}
 			if (builtin_type == Variant::DICTIONARY && is_struct && !is_meta_type && dictionary_with_keys_source.size() == 2) {
-				return vformat("DictionaryWithKeys[%s, %s]", dictionary_with_keys_source[0].to_string(), dictionary_with_keys_source[1].to_string());
+				return vformat(dictionary_with_keys_is_record ? "Record[%s, %s]" : "DictionaryWithKeys[%s, %s]", dictionary_with_keys_source[0].to_string(), dictionary_with_keys_source[1].to_string());
 			}
 			if (is_typed_callable_type() && is_bound_callable) {
 				// `BoundCallable[int]`. The return type isn't shown if unknown.

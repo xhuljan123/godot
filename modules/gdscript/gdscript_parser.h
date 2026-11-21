@@ -134,6 +134,8 @@ public:
 		// `DictionaryWithKeys[ListType, ValueType]`: a struct type with a required key for each value of the list.
 		// Holds the two type arguments, for display only (size 0 or 2).
 		Vector<DataType> dictionary_with_keys_source;
+		// `Record[ListType, ValueType]`: like `DictionaryWithKeys`, but every key is optional. Set with `dictionary_with_keys_source`.
+		bool dictionary_with_keys_is_record = false;
 
 		// Callable signature (`Callable[int, String]`). At runtime it's a plain `Callable`, the signature is only checked statically.
 		// Set for annotated typed callables, and for callable values whose signature is known (lambdas and function references).
@@ -508,6 +510,7 @@ public:
 			value_list_values = p_other.value_list_values;
 			is_nested_container = p_other.is_nested_container;
 			dictionary_with_keys_source = p_other.dictionary_with_keys_source;
+			dictionary_with_keys_is_record = p_other.dictionary_with_keys_is_record;
 			is_typed_callable = p_other.is_typed_callable;
 			is_bound_callable = p_other.is_bound_callable;
 			callable_arg_types = p_other.callable_arg_types;
@@ -1567,6 +1570,7 @@ public:
 			STRUCT_MODIFIER_VALUES_OF, // `ValuesOf[Source]`: a `List[...]` of the values of an enum, or of a constant dictionary or array (or a variable initialized with one).
 			STRUCT_MODIFIER_FUNCTION_ARG_TYPE, // `FunctionArgType[function]`: a `Callable[...]` with the argument types of a function.
 			STRUCT_MODIFIER_DICTIONARY_WITH_KEYS, // `DictionaryWithKeys[ListType, ValueType]`: a struct type with a required key for each list value.
+			STRUCT_MODIFIER_RECORD, // `Record[ListType, ValueType]`: a struct type with an optional key for each list value.
 		};
 		StructModifier struct_modifier = STRUCT_MODIFIER_NONE;
 		// Keys left as they are by `Partial[StructType, { key, other }]` and `Required[StructType, { key, other }]`,
@@ -1593,6 +1597,13 @@ public:
 		DataType infer_erased_type;
 		// In a parameter type: the index of the parameter it refers to, once validated by the analyzer. -1 otherwise.
 		int infer_parameter_index = -1;
+
+		// `value: InferValue[source[key]]` in the type of a parameter: the type of the value of `source` (a struct type, or a
+		// variable of a struct type) at the key passed for the earlier parameter `key`, at each call. Like `Infer`, the analyzer
+		// sets `infer_parameter_index` (to the index of `key`) once validated.
+		bool is_infer_value = false;
+		ExpressionNode *infer_value_expression = nullptr;
+		DataType infer_value_source_type; // The struct type of `source`, once validated.
 
 		// `List["foo", "bar", 1]`: the accepted values (constant expressions).
 		bool is_value_list = false;

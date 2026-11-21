@@ -22,11 +22,13 @@ Table of contents:
   - [KeysOf](#keysof)
   - [ValuesOf](#valuesof)
   - [DictionaryWithKeys](#dictionarywithkeys)
+  - [Record](#record)
   - [NestedArray and NestedDictionary](#nestedarray-and-nesteddictionary)
   - [Typed callables](#typed-callables-callableargsreturn)
   - [FunctionArgType](#functionargtype)
   - [TypeOf](#typeof)
   - [Infer](#infer)
+  - [InferValue](#infervalue)
   - [BoundCallable](#boundcallable)
 - [Syntax](#syntax)
   - [Optional chaining](#optional-chaining-)
@@ -241,6 +243,8 @@ func axis_value(point: Point, axis: KeysOf[Point]) -> float:
 
 Native enums work too (`KeysOf[Node.ProcessMode]`). Using a key of a `KeysOf` type that doesn't exist in the struct being indexed is an error.
 
+A variable, parameter or member of a struct type gives the keys of its type (`KeysOf[foo]` with `var foo: Struct[{ ... }]`).
+
 #### ValuesOf
 
 `ValuesOf[Source]` creates a `List` from the values of an enum, the values of a constant dictionary, or the elements of a constant array (duplicates are removed). It's the counterpart of [`KeysOf`](#keysof).
@@ -397,6 +401,22 @@ func _ready():
 	var copy: TypeOf[b] = { key = "k" }
 ```
 
+#### Record
+
+`Record[Keys, ValueType]` is like [`DictionaryWithKeys`](#dictionarywithkeys), but every key is optional (like `Partial<Record<K, V>>` in TypeScript): a dictionary can have any of the keys, each with a value of `ValueType`, and no other key.
+
+```gdscript
+type Foo = Record[List["foo", "bar"], int]
+
+var a: Foo = {} # OK, all the keys are optional.
+var b: Foo = { "foo": 1 } # OK
+var c: Foo = { "foo": 1, "bar": 2 } # OK
+var d: Foo = { "test": 1 } # Error: Key "test" does not exist in struct type "Foo".
+var e: Foo = { "foo": [1] } # Error: Cannot assign a value of type "Array" to key "foo" of type "int".
+```
+
+Keys can be strings or ints (`Record[ValuesOf[MyEnum], float]`), and indexing a `Record` only accepts its keys, like `DictionaryWithKeys`. Since a key may be missing, reading a value with a `List`/`KeysOf` key gives a weak type (known for completion, checked at runtime).
+
 #### Infer
 
 `-> Infer[param]` is a function return type that depends on the argument passed for `param`: each call is typed from its argument at the call site (like a generic `function foo<T>(arg: T): T` in TypeScript).
@@ -479,6 +499,28 @@ func _ready():
 	run(foo.bind_strict(2))
 	var not_bound: BoundCallable = func() -> void: pass # Error: only bind_strict() results are BoundCallable.
 	var plain: Callable = bar # A BoundCallable can still be used as a plain Callable.
+```
+
+#### InferValue
+
+`value: InferValue[source[key]]` types a parameter from an **earlier** parameter `key` at each call: `value` must have the type of the value of `source` at the key passed for `key` (like `function set<K extends keyof T>(key: K, value: T[K])` in TypeScript). `source` is a struct type (`Settings`, `Other.Settings`) or a variable, constant or member of a struct type (`foo`, `self.foo`).
+
+- A constant key gives the declared type of that key: `set_value("key_1", 1)` checks `1` as an `int`, `set_value("key_2", [1])` checks `[1]` as an `Array[int]`.
+- A key typed as a `List`/`KeysOf` (or an enum, for int keys) gives the type shared by all of its keys, or `Variant` if they don't share one. Any other key gives `Variant` (the key itself is checked by its own parameter type, usually `KeysOf[source]`).
+- Inside the function, `value` is a `Variant`. The check happens at each call, statically.
+- `InferValue` can only be used in the type of a parameter, and `key` must be a parameter that comes before it. It can be nested like `Infer` (`Array[InferValue[foo[key]]]`).
+
+```gdscript
+var foo: Struct[{ key_1: int, key_2: Array[int] }] = { key_1 = 1, key_2 = [1] }
+
+func set_value(key: KeysOf[foo], value: InferValue[foo[key]]) -> void:
+	pass
+
+func _ready():
+	set_value("key_1", 2) # OK: "value" is an int.
+	set_value("key_2", [2, 3]) # OK: "value" is an Array[int].
+	set_value("key_1", [2]) # Error: argument 2 should be "int" but is "Array".
+	set_value("key_3", 1) # Error: "key_3" is not a key of "foo".
 ```
 
 ### Syntax
@@ -673,7 +715,7 @@ func _ready():
 
 ### Editor support
 
-- Syntax highlighting: `type` in type alias declarations uses the keyword color (like `var` and `func`). `Struct`, `Partial`, `Required`, `Omit`, `Pick`, `StructFromClass`, `ExtractExportableVars`, `StructToVariant`, `List`, `KeysOf`, `ValuesOf`, `DictionaryWithKeys`, `NestedArray`, `NestedDictionary`, `FunctionArgType`, `TypeOf` and `Infer` use the base type color when followed by `[`. `BoundCallable` uses the base type color.
+- Syntax highlighting: `type` in type alias declarations uses the keyword color (like `var` and `func`). `Struct`, `Partial`, `Required`, `Omit`, `Pick`, `StructFromClass`, `ExtractExportableVars`, `StructToVariant`, `List`, `KeysOf`, `ValuesOf`, `DictionaryWithKeys`, `Record`, `NestedArray`, `NestedDictionary`, `FunctionArgType`, `TypeOf`, `Infer` and `InferValue` use the base type color when followed by `[`. `BoundCallable` uses the base type color.
 - Argument hints: `call()`, `call_deferred()` and `bind_strict()` on a callable with a known signature show its argument types.
 - Code completion: type names, struct keys (in literals, after `.`, in `Foo.` types), variables and members inside `TypeOf[...]`, parameters inside `Infer[...]`, `List`/`KeysOf`/`ValuesOf` values in assignments and call arguments, members after `?.`.
 - Hover tooltips, argument hints and the script documentation show the full types, including the aliased type of type aliases (`Foo (Struct[{ ... }])`), and `Infer[param]` as the return type of functions declared with it.

@@ -13,7 +13,7 @@ instead of at runtime.
 Highlights:
 
 - **Struct types and type aliases**: `type Player = Struct[{ name: String, hp?: int }]`, with required, optional and default keys.
-- **Utility types**: `Partial`, `Required`, `Omit`, `Pick`, `StructFromClass`, `KeysOf`, `ValuesOf`, `DictionaryWithKeys`, `List`, `NestedArray`/`NestedDictionary`, and more.
+- **Utility types**: `Partial`, `Required`, `Omit`, `Pick`, `StructFromClass`, `KeysOf`, `ValuesOf`, `DictionaryWithKeys`, `Record`, `List`, `NestedArray`/`NestedDictionary`, and more.
 - **Typed callables**: `Callable[int, String][bool]`, `FunctionArgType`, and `BoundCallable`.
 - **Type inference**: `TypeOf[value]` and `Infer[param]`, which types a function's return value or another parameter from the arguments at each call.
 - **Syntax additions**: optional chaining (`player?.stats?.hp`) and block comments.

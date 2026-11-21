@@ -1,0 +1,7 @@
+GDTEST_OK
+key_1 = 5
+key_2 = [2, 3]
+volume = 0.5
+name = Bob
+tags = ["a"]
+y = 2.5
