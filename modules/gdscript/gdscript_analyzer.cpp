@@ -5745,6 +5745,7 @@ void GDScriptAnalyzer::flush_pending_struct_key_errors() {
 			parser->pending_warnings.push_back(warning);
 		}
 #endif // DEBUG_ENABLED
+
 		// Not used as a key name: the key is an expression after all, so its use of `self` stands.
 		for (GDScriptParser::LambdaNode *lambda : E.value.self_lambdas) {
 			lambda->use_self = true;
@@ -6881,6 +6882,7 @@ void GDScriptAnalyzer::reduce_dictionary(GDScriptParser::DictionaryNode *p_dicti
 #ifdef DEBUG_ENABLED
 				const int warning_count = parser->pending_warnings.size();
 #endif // DEBUG_ENABLED
+
 				// Enclosing lambdas not using `self` yet, so the mark from this key alone can be held back.
 				LocalVector<GDScriptParser::LambdaNode *> lambdas_without_self;
 				for (GDScriptParser::LambdaNode *lambda = current_lambda; lambda != nullptr; lambda = lambda->parent_lambda) {
