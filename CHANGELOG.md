@@ -30,6 +30,7 @@ Table of contents:
   - [Infer](#infer)
   - [InferValue](#infervalue)
   - [BoundCallable](#boundcallable)
+  - [self as a type](#self-as-a-type)
 - [Syntax](#syntax)
   - [Optional chaining](#optional-chaining-)
   - [Block comments](#block-comments--)
@@ -540,7 +541,33 @@ func _ready():
 	set_value("a", "2") # Error: argument 2 should be "int" but is "String".
 ```
 
-`self` can't be used in static functions: use the class name instead (`InferValue[Foo[key]]`).
+`self` works in static functions too, since a type annotation doesn't use the instance (see [self as a type](#self-as-a-type)).
+
+#### self as a type
+
+`self` can be used as a type: it's the current class (like `this` types in TypeScript). It works wherever a type or a class is expected, so the generic types work on the class they're written in without repeating its name (or without a `class_name` at all):
+
+- `KeysOf[self]`: the names of the (non-static) member variables of the class.
+- `StructFromClass[self]`, `ExtractExportableVars[self]`: the struct type of the class.
+- `TypeOf[self]`: the class type (`TypeOf[self.member]` was already supported).
+- `InferValue[self[key]]`: the type of the member variable passed as `key` (see [InferValue](#infervalue)).
+- `Array[self]`, `DictionaryWithKeys[KeysOf[self], int]`, `-> self` and so on.
+
+```gdscript
+var a: int = 1
+var b := "test"
+
+func snapshot() -> StructFromClass[self]:
+	return { a = a, b = b }
+
+func set_value(key: KeysOf[self], value: InferValue[self[key]]) -> void:
+	set(key, value)
+
+static func describe(key: KeysOf[self], value: InferValue[self[key]]) -> String:
+	return "%s = %s" % [key, value] # `self` in a type annotation works in static functions.
+```
+
+Like `StructFromClass[MyClass]` inside `MyClass`, a member variable can't be typed from the keys of its own class (`var data: StructFromClass[self]` is a cyclic reference): use it in parameters, return types, local variables and type aliases.
 
 ### Syntax
 

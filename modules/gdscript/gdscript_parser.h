@@ -1586,6 +1586,10 @@ public:
 		bool is_type_of = false;
 		ExpressionNode *type_of_expression = nullptr;
 
+		// `self` as a type (`KeysOf[self]`, `StructFromClass[self]`, `Array[self]`): the current class. The type chain has
+		// a single identifier named "self", for display.
+		bool is_self_type = false;
+
 		// `-> Infer[param]`: only valid as a function return type. The type of each call is inferred
 		// from the argument passed for the parameter (an enum gives its value type, a dictionary literal a struct type).
 		bool is_infer = false;
@@ -1810,6 +1814,9 @@ private:
 	DictionaryNode *completion_dictionary_key_of = nullptr; // Dictionary literal whose key is being parsed.
 	List<CompletionCall> completion_call_stack;
 	bool in_lambda = false;
+	// Parsing the argument of `TypeOf[...]` or `InferValue[...]`: a type annotation, where `self` (the current class) can be used
+	// in static functions too.
+	int type_annotation_expression_depth = 0;
 	bool lambda_ended = false; // Marker for when a lambda ends, to apply an end of statement if needed.
 
 	typedef bool (GDScriptParser::*AnnotationAction)(AnnotationNode *p_annotation, Node *p_target, ClassNode *p_class);

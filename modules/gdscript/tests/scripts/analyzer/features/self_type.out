@@ -1,0 +1,7 @@
+GDTEST_OK
+["a", "b"]
+1 test
+true
+a = 2
+b = static
+b

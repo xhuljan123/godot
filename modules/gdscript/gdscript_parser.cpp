@@ -2958,7 +2958,7 @@ GDScriptParser::ExpressionNode *GDScriptParser::parse_literal(ExpressionNode *p_
 }
 
 GDScriptParser::ExpressionNode *GDScriptParser::parse_self(ExpressionNode *p_previous_operand, bool p_can_assign) {
-	if (current_function && current_function->is_static) {
+	if (current_function && current_function->is_static && type_annotation_expression_depth == 0) {
 		push_error(R"(Cannot use "self" inside a static function.)");
 	}
 	SelfNode *self = alloc_node<SelfNode>();
@@ -3980,6 +3980,17 @@ GDScriptParser::TypeNode *GDScriptParser::parse_type(bool p_allow_void) {
 	TypeNode *type = alloc_node<TypeNode>();
 	reset_extents(type, current);
 	make_completion_context(p_allow_void ? COMPLETION_TYPE_NAME_OR_VOID : COMPLETION_TYPE_NAME, type);
+	if (match(GDScriptTokenizer::Token::SELF)) {
+		// `self` as a type: the current class (`KeysOf[self]`, `StructFromClass[self]`, `func clone() -> self`).
+		IdentifierNode *self_name = alloc_node<IdentifierNode>();
+		reset_extents(self_name, previous);
+		self_name->name = SNAME("self");
+		complete_extents(self_name);
+		type->type_chain.push_back(self_name);
+		type->is_self_type = true;
+		complete_extents(type);
+		return type;
+	}
 	if (!match(GDScriptTokenizer::Token::IDENTIFIER)) {
 		if (match(GDScriptTokenizer::Token::TK_VOID)) {
 			if (p_allow_void) {
@@ -4014,7 +4025,9 @@ GDScriptParser::TypeNode *GDScriptParser::parse_type(bool p_allow_void) {
 		advance(); // "[".
 		type->is_type_of = true;
 		const bool had_completion_context = completion_context.type != COMPLETION_NONE;
+		type_annotation_expression_depth++;
 		type->type_of_expression = parse_expression(false);
+		type_annotation_expression_depth--;
 		if (!had_completion_context && completion_context.type != COMPLETION_NONE) {
 			completion_context.is_type_of_argument = true;
 		}
@@ -4050,7 +4063,9 @@ GDScriptParser::TypeNode *GDScriptParser::parse_type(bool p_allow_void) {
 		push_multiline(true);
 		advance(); // "[".
 		type->is_infer_value = true;
+		type_annotation_expression_depth++;
 		type->infer_value_expression = parse_expression(false);
+		type_annotation_expression_depth--;
 		if (type->infer_value_expression == nullptr) {
 			push_error(R"(Expected a key access like "source[key]" after "InferValue[".)");
 		}

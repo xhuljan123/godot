@@ -841,7 +841,7 @@ GDScriptParser::DataType GDScriptAnalyzer::resolve_keys_of_type(GDScriptParser::
 		}
 	}
 
-	const bool is_name = !argument->type_chain.is_empty() && argument->container_types.is_empty() && !argument->is_struct && argument->struct_modifier == GDScriptParser::TypeNode::STRUCT_MODIFIER_NONE && !argument->is_value_list && !argument->is_callable_signature && !argument->is_nested_container && !argument->is_infer && !argument->is_infer_value && !argument->is_type_of;
+	const bool is_name = !argument->type_chain.is_empty() && argument->container_types.is_empty() && !argument->is_struct && argument->struct_modifier == GDScriptParser::TypeNode::STRUCT_MODIFIER_NONE && !argument->is_value_list && !argument->is_callable_signature && !argument->is_nested_container && !argument->is_infer && !argument->is_infer_value && !argument->is_type_of && !argument->is_self_type;
 	if (from_argument_value) {
 		// Values collected above.
 	} else if (is_name) {
@@ -979,7 +979,7 @@ GDScriptParser::DataType GDScriptAnalyzer::resolve_function_arg_type(GDScriptPar
 	if (argument == nullptr) {
 		return GDScriptParser::DataType(); // Error already reported by the parser.
 	}
-	const bool is_name = !argument->type_chain.is_empty() && argument->container_types.is_empty() && !argument->is_struct && argument->struct_modifier == GDScriptParser::TypeNode::STRUCT_MODIFIER_NONE && !argument->is_value_list && !argument->is_callable_signature && !argument->is_nested_container;
+	const bool is_name = !argument->type_chain.is_empty() && argument->container_types.is_empty() && !argument->is_struct && argument->struct_modifier == GDScriptParser::TypeNode::STRUCT_MODIFIER_NONE && !argument->is_value_list && !argument->is_callable_signature && !argument->is_nested_container && !argument->is_self_type;
 	if (!is_name) {
 		push_error(vformat(R"(%s name, like "FunctionArgType[my_function]".)", expected), argument);
 		return GDScriptParser::DataType();
@@ -1033,10 +1033,10 @@ GDScriptParser::DataType GDScriptAnalyzer::resolve_type_of(GDScriptParser::TypeN
 		return GDScriptParser::DataType(); // Error already reported by the parser.
 	}
 
-	// Only identifiers and attribute chains (`foo`, `foo.bar`, `self.foo`): no calls, operators or literals.
+	// Only `self`, identifiers and attribute chains (`foo`, `foo.bar`, `self.foo`): no calls, operators or literals.
 	const GDScriptParser::ExpressionNode *node = argument;
 	while (true) {
-		if (node->type == GDScriptParser::Node::IDENTIFIER || (node->type == GDScriptParser::Node::SELF && node != argument)) {
+		if (node->type == GDScriptParser::Node::IDENTIFIER || node->type == GDScriptParser::Node::SELF) {
 			break;
 		}
 		if (node->type == GDScriptParser::Node::SUBSCRIPT) {
@@ -1930,6 +1930,17 @@ GDScriptParser::DataType GDScriptAnalyzer::resolve_datatype(GDScriptParser::Type
 
 	GDScriptParser::DataType result;
 	result.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
+
+	if (p_type->is_self_type) {
+		// `self` as a type: the current class (the class of the function, for types resolved again at each call).
+		result = parser->current_class->self_type;
+		result.is_meta_type = true;
+		result.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
+		result.is_constant = false;
+		result.is_read_only = false;
+		p_type->resolved_type = result;
+		return result;
+	}
 
 	if (p_type->type_chain.is_empty()) {
 		// void.
