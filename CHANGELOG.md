@@ -427,7 +427,7 @@ Keys can be strings or ints (`Record[ValuesOf[MyEnum], float]`), and indexing a 
 - A dictionary literal with name keys gives the struct type inferred from it, like with [`inferType()`](#infertype): `foo({ key_1: 1 })` is a `Struct[{ key_1: int }]`.
 - An array literal whose elements share a type gives a typed array, and a lambda its full signature (`Callable[int][int]`, kept by `:=`).
 - Any other argument gives its own type, whatever the declared type of the parameter (`Variant`, untyped or anything else): `foo(1)` is an `int`. An argument without a known type gives `Variant`, and a missing argument (with a default value) the type of the parameter.
-- Inside the function, the return value isn't checked (any value can be returned). At each call, the compiled code checks that the returned value matches the inferred type.
+- Inside the function, the return value isn't checked (any value can be returned). At each call, the compiled code checks that the returned value matches the inferred type. This includes awaited calls to coroutines (functions with `await`): `var volume := await get_setting("volume")` is typed, and the value is checked when the coroutine returns.
 - `param` must be a parameter of the function (not the rest parameter). `Infer` can't be used anywhere else than as a function return type.
 
 ```gdscript

@@ -907,6 +907,12 @@ GDScriptCodeGenerator::Address GDScriptCompiler::_parse_expression(CodeGen &code
 			const GDScriptParser::AwaitNode *await = static_cast<const GDScriptParser::AwaitNode *>(p_expression);
 
 			GDScriptCodeGenerator::Address result = codegen.add_temporary(_gdtype_from_datatype(p_expression->type_constraint, codegen.script));
+			// `await foo()` where the call is typed but the function may return anything at runtime (`-> Infer[...]`, typed
+			// callables, `load_file()`, see the CALL case): the call isn't checked when awaited, so resume into an untyped
+			// temporary, then assign it to the typed result, which checks (and converts) the value.
+			const GDScriptParser::CallNode *awaited_call = await->to_await != nullptr && await->to_await->type == GDScriptParser::Node::CALL ? static_cast<const GDScriptParser::CallNode *>(await->to_await) : nullptr;
+			const bool checks_awaited_return = awaited_call != nullptr && result.type.has_type() && (awaited_call->is_infer_return || GDScriptAnalyzer::is_typed_callable_return_call(awaited_call) || GDScriptAnalyzer::is_load_file_call(awaited_call));
+			GDScriptCodeGenerator::Address await_target = checks_awaited_return ? codegen.add_temporary() : result;
 			GDScriptParser::ExpressionNode *previous_awaited_node = awaited_node;
 			awaited_node = await->to_await;
 			GDScriptCodeGenerator::Address argument = _parse_expression(codegen, r_error, await->to_await);
@@ -915,10 +921,14 @@ GDScriptCodeGenerator::Address GDScriptCompiler::_parse_expression(CodeGen &code
 				return GDScriptCodeGenerator::Address();
 			}
 
-			gen->write_await(result, argument);
+			gen->write_await(await_target, argument);
 
 			if (argument.mode == GDScriptCodeGenerator::Address::TEMPORARY) {
 				gen->pop_temporary();
+			}
+			if (checks_awaited_return) {
+				gen->write_assign_with_conversion(result, await_target);
+				gen->pop_temporary(); // `await_target`, allocated after `result` and before the argument.
 			}
 
 			return result;

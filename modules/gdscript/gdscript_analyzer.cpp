@@ -7072,8 +7072,10 @@ void GDScriptAnalyzer::reduce_call(GDScriptParser::CallNode *p_call, bool p_is_a
 				}
 			}
 			// An argument without a known type can't give the type: the call has the erased type.
+			const bool is_coroutine = return_type.is_coroutine;
 			return_type = has_unknown_type ? erased_type : resolve_infer_template(function->return_infer_template, function->return_infer_template_class, "the return value", argument_types, argument_values, p_call);
 			return_type.infer_return_template_function = nullptr;
+			return_type.is_coroutine = is_coroutine; // A function with `await` must still be awaited.
 			p_call->is_infer_return = !return_type.is_variant();
 		}
 
