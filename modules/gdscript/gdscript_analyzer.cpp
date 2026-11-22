@@ -1317,6 +1317,7 @@ int GDScriptAnalyzer::resolve_infer_value_reference(GDScriptParser::FunctionNode
 	// instead of the "cannot be used as a value" error of `reduce_expression()`.
 	const bool previous_static_context = static_context;
 	static_context = false;
+	const int error_count = parser->errors.size();
 	if (subscript->base->type == GDScriptParser::Node::IDENTIFIER) {
 		reduce_identifier(static_cast<GDScriptParser::IdentifierNode *>(subscript->base), true);
 	} else if (subscript->base->type == GDScriptParser::Node::SUBSCRIPT) {
@@ -1326,8 +1327,8 @@ int GDScriptAnalyzer::resolve_infer_value_reference(GDScriptParser::FunctionNode
 	}
 	static_context = previous_static_context;
 	GDScriptParser::DataType source_type = subscript->base->type_constraint;
-	if (!source_type.is_set() || source_type.kind == GDScriptParser::DataType::UNRESOLVED) {
-		return -1; // Error already reported.
+	if (!source_type.is_set() || source_type.kind == GDScriptParser::DataType::UNRESOLVED || parser->errors.size() > error_count) {
+		return -1; // Error already reported (like an undeclared identifier, typed as `Variant`).
 	}
 	source_type = type_from_metatype(source_type);
 	if (source_type.kind == GDScriptParser::DataType::CLASS && source_type.class_type != nullptr) {
