@@ -5583,6 +5583,22 @@ Variant GDScriptAnalyzer::make_load_file_reduced_value(GDScriptParser::CallNode 
 	return resource;
 }
 
+// Whether `p_expression` has its type for sure, or `null`: a hard type, or a struct key read (`a.b`, `a?.b`, `a["b"]`) whose
+// base is too. A key read is only weak because of `null` (a missing optional key, or a `null` link in an optional chain),
+// so `parseOptional()` can use the declared type of the key it reads.
+bool GDScriptAnalyzer::is_struct_read_only_nullable(const GDScriptParser::ExpressionNode *p_expression) {
+	if (p_expression == nullptr) {
+		return false;
+	}
+	if (p_expression->type_constraint.is_hard_type()) {
+		return true;
+	}
+	if (get_struct_key_index(p_expression) < 0) {
+		return false;
+	}
+	return is_struct_read_only_nullable(static_cast<const GDScriptParser::SubscriptNode *>(p_expression)->base);
+}
+
 // A `load_file()` call (the global function, not a method with the same name).
 bool GDScriptAnalyzer::is_load_file_call(const GDScriptParser::CallNode *p_call) {
 	return p_call != nullptr && !p_call->is_super && p_call->callee != nullptr && p_call->callee->type == GDScriptParser::Node::IDENTIFIER && p_call->function_name == SNAME("load_file") && GDScriptUtilityFunctions::function_exists(p_call->function_name);
@@ -5597,6 +5613,8 @@ bool GDScriptAnalyzer::is_load_file_call(const GDScriptParser::CallNode *p_call)
 // - If `value` reads an optional struct key (`data.key` with `key?: int`), its declared type is used:
 //   reading it alone gives a weak type since a missing key is `null`, but that's the case `default_value` covers,
 //   so the call has the key's type as a hard type (`var count := parseOptional(data.count, 0)` is an `int`).
+//   Same through optional keys and optional chains (`parseOptional(data.payload?.id, 0)` with `payload?: Struct[...]`):
+//   any missing link gives `null` too (see `is_struct_read_only_nullable()`).
 // With two constants, the call is evaluated during analysis.
 GDScriptParser::DataType GDScriptAnalyzer::reduce_parse_optional_call(GDScriptParser::CallNode *p_call) {
 	static const StringName function_name = SNAME("parseOptional");
@@ -5622,12 +5640,16 @@ GDScriptParser::DataType GDScriptAnalyzer::reduce_parse_optional_call(GDScriptPa
 		return GDScriptParser::DataType::get_variant_type();
 	}
 
-	// Optional struct key: use the declared key type instead of the weak read type (see `get_struct_key_read_type()`).
+	// Optional struct key (or a key read through optional keys and optional chains): use the declared key type instead of
+	// the weak read type (see `get_struct_key_read_type()` and `weaken_optional_chain_type()`), since it's only weak
+	// because it can be `null`.
 	bool value_is_optional_key = false;
 	const int key_index = get_struct_key_index(value);
 	if (key_index >= 0) {
-		const GDScriptParser::DataType &struct_type = static_cast<GDScriptParser::SubscriptNode *>(value)->base->type_constraint;
-		if (struct_type.is_hard_type() && struct_type.struct_key_optional[key_index]) {
+		const GDScriptParser::ExpressionNode *base = static_cast<GDScriptParser::SubscriptNode *>(value)->base;
+		const GDScriptParser::DataType &struct_type = base->type_constraint;
+		const bool can_be_null = struct_type.struct_key_optional[key_index] || !value_type.is_hard_type();
+		if (can_be_null && is_struct_read_only_nullable(base)) {
 			value_is_optional_key = true;
 			value_type = struct_type.struct_key_types[key_index];
 			value_type.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;

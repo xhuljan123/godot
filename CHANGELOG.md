@@ -777,7 +777,7 @@ var bar: Foo = mergeObjects({}, {
 
 #### parseOptional
 
-`parseOptional(value, default_value)` returns `value`, or `default_value` if `value` is `null`. With an optional struct key, the result is typed as the key's declared type, and `default_value` must match it.
+`parseOptional(value, default_value)` returns `value`, or `default_value` if `value` is `null`. With an optional struct key, the result is typed as the key's declared type, and `default_value` must match it. This also works through optional keys and optional chains, where any missing link gives `null`: `var id := parseOptional(foo.payload?.id, 0)` is an `int` with `payload?: Struct[{ id: int }]`.
 
 ```gdscript
 var foo: Struct[{ bar?: int }] = {}

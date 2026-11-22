@@ -51,3 +51,12 @@ func test():
 	print(size, " ", label, " ", typeof(size) == TYPE_INT)
 
 	print(NAME)
+
+	# Through optional keys and optional chains: any missing link gives `null`, so the declared key type is used too.
+	var nested: Struct[{ payload?: Struct[{ id: int, tags?: Array[String] }] }] = {}
+	var id := parseOptional(nested.payload?.id, 0)
+	print(id, " ", typeof(id) == TYPE_INT)
+	nested.payload = { id = 7 }
+	print(parseOptional(nested.payload?.id, 0))
+	var tags := parseOptional(nested.payload?.tags, [])
+	print(tags.size(), " ", tags.get_typed_builtin() == TYPE_STRING)
