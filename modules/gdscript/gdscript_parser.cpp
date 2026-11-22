@@ -4049,36 +4049,28 @@ GDScriptParser::TypeNode *GDScriptParser::parse_type(bool p_allow_void) {
 	}
 
 	if (type_element->name == SNAME("Infer") && check(GDScriptTokenizer::Token::BRACKET_OPEN)) {
-		// `-> Infer[param]`: the return type of a call is inferred from the argument passed for `param`.
-		// The argument is parsed as an expression, so code completion suggests the parameters.
-		// The analyzer only accepts a parameter name of the function.
+		// Two forms, told apart by the argument (parsed as an expression, so code completion suggests the parameters):
+		// - `Infer[param]`: the type of the argument passed for the parameter `param`.
+		// - `Infer[source[key]]`: the type of the value of `source` (a struct or a class, a value of one, or a parameter) at the
+		//   key passed for the parameter `key` (`is_infer_value`).
+		// The analyzer validates the names. `self` can be used in static functions too (it's a type annotation).
 		push_multiline(true);
 		advance(); // "[".
-		type->is_infer = true;
-		type->infer_expression = parse_expression(false);
-		if (type->infer_expression == nullptr) {
-			push_error(R"(Expected a parameter name after "Infer[".)");
+		type_annotation_expression_depth++;
+		ExpressionNode *argument = parse_expression(false);
+		type_annotation_expression_depth--;
+		if (argument == nullptr) {
+			push_error(R"(Expected a parameter name or a key access like "source[key]" after "Infer[".)");
+			type->is_infer = true;
+		} else if (argument->type == Node::SUBSCRIPT && !static_cast<SubscriptNode *>(argument)->is_attribute) {
+			type->is_infer_value = true;
+			type->infer_value_expression = argument;
+		} else {
+			type->is_infer = true;
+			type->infer_expression = argument;
 		}
 		pop_multiline();
 		consume(GDScriptTokenizer::Token::BRACKET_CLOSE, R"(Expected closing "]" after "Infer" argument.)");
-		complete_extents(type);
-		return type;
-	}
-
-	if (type_element->name == SNAME("InferValue") && check(GDScriptTokenizer::Token::BRACKET_OPEN)) {
-		// `value: InferValue[source[key]]`: typed at each call as the value of `source` at the key passed for `key`.
-		// The argument is parsed as an expression (a subscript). The analyzer validates its shape.
-		push_multiline(true);
-		advance(); // "[".
-		type->is_infer_value = true;
-		type_annotation_expression_depth++;
-		type->infer_value_expression = parse_expression(false);
-		type_annotation_expression_depth--;
-		if (type->infer_value_expression == nullptr) {
-			push_error(R"(Expected a key access like "source[key]" after "InferValue[".)");
-		}
-		pop_multiline();
-		consume(GDScriptTokenizer::Token::BRACKET_CLOSE, R"(Expected closing "]" after "InferValue" argument.)");
 		complete_extents(type);
 		return type;
 	}
@@ -5886,7 +5878,7 @@ String GDScriptParser::type_node_to_string(const TypeNode *p_type) {
 	if (p_type->is_infer_value) {
 		const ExpressionNode *expression = p_type->infer_value_expression;
 		if (expression != nullptr && expression->type == Node::SUBSCRIPT) {
-			// `InferValue[source[key]]`, `InferValue[Other.source[key]]`.
+			// `Infer[source[key]]`, `Infer[Other.source[key]]`.
 			const SubscriptNode *subscript = static_cast<const SubscriptNode *>(expression);
 			PackedStringArray base_names;
 			const ExpressionNode *base = subscript->base;
@@ -5897,10 +5889,10 @@ String GDScriptParser::type_node_to_string(const TypeNode *p_type) {
 			}
 			base_names.insert(0, expression_to_string(base));
 			if (!subscript->is_attribute) {
-				return vformat("InferValue[%s[%s]]", String(".").join(base_names), expression_to_string(subscript->index));
+				return vformat("Infer[%s[%s]]", String(".").join(base_names), expression_to_string(subscript->index));
 			}
 		}
-		return vformat("InferValue[%s]", expression_to_string(expression));
+		return vformat("Infer[%s]", expression_to_string(expression));
 	}
 	if (p_type->is_type_of) {
 		return vformat("TypeOf[%s]", expression_to_string(p_type->type_of_expression));

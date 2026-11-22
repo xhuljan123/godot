@@ -1,4 +1,4 @@
-# `self` as a type: the current class. Works in `TypeOf`, `KeysOf`, `StructFromClass`, `InferValue` and any other type argument,
+# `self` as a type: the current class. Works in `TypeOf`, `KeysOf`, `StructFromClass`, `Infer[source[key]]` and any other type argument,
 # also in static functions (a type annotation doesn't use the instance).
 var a: int = 1
 var b := "test"
@@ -12,11 +12,11 @@ func snapshot() -> StructFromClass[self]:
 func same(other: TypeOf[self]) -> bool:
 	return other == self
 
-func set_value(key: KeysOf[self], value: InferValue[self[key]]) -> String:
+func set_value(key: KeysOf[self], value: Infer[self[key]]) -> String:
 	set(key, value)
 	return "%s = %s" % [key, get(key)]
 
-static func describe(key: KeysOf[self], value: InferValue[self[key]]) -> String:
+static func describe(key: KeysOf[self], value: Infer[self[key]]) -> String:
 	return "%s = %s" % [key, value]
 
 func test():

@@ -1,7 +1,7 @@
 GDTEST_ANALYZER_ERROR
->> ERROR at line 7: "InferValue" in the type of parameter "value" can only refer to an earlier parameter, but "key" comes after it.
->> ERROR at line 10: "InferValue" expects a struct or a class (value or type, or "self") indexed by an earlier parameter, like "func foo(key: KeysOf[Foo], value: InferValue[Foo[key]])", but "count" is "int".
->> ERROR at line 14: "InferValue" can only be used in the type of a parameter, like "func foo(key: KeysOf[Foo], value: InferValue[Foo[key]])".
+>> ERROR at line 7: "Infer" in the type of parameter "value" can only refer to an earlier parameter, but "key" comes after it.
+>> ERROR at line 10: "Infer[source[key]]" expects a struct or a class (value or type, or "self") indexed by a parameter, like "func foo(key: KeysOf[Foo], value: Infer[Foo[key]])", but "count" is "int".
+>> ERROR at line 14: "Infer" can only be used as the return type of a function or in the type of a parameter, like "func foo(key: KeysOf[Foo], value: Infer[Foo[key]])" or "func get_value(key: KeysOf[Foo]) -> Infer[Foo[key]]".
 >> ERROR at line 16: Cannot pass a value of type "int" as "String".
 >> ERROR at line 16: Invalid argument for "describe()" function: argument 2 should be "String" but is "int".
 >> ERROR at line 17: Cannot pass a value of type "String" as "float".

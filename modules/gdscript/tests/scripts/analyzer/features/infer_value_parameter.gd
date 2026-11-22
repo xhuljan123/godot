@@ -1,13 +1,13 @@
-# `InferValue[target[key]]` with an earlier parameter `target` (like a `Variant`): typed at each call from the argument passed
+# `Infer[target[key]]` with an earlier parameter `target` (like a `Variant`): typed at each call from the argument passed
 # for it. A struct (or dictionary literal) gives its keys, a GDScript object its member variables.
 class Settings:
 	var volume: float = 1.0
 	var title := "Game"
 
-func describe(target: Variant, key: KeysOf[Infer[target]], value: InferValue[target[key]]) -> String:
+func describe(target: Variant, key: KeysOf[Infer[target]], value: Infer[target[key]]) -> String:
 	return "%s = %s" % [key, value]
 
-func any_key(target: Variant, key: String, value: InferValue[target[key]]) -> String:
+func any_key(target: Variant, key: String, value: Infer[target[key]]) -> String:
 	return "%s = %s" % [key, value]
 
 func test():

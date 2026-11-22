@@ -1,17 +1,17 @@
-# `InferValue[source[key]]` in a parameter type: at each call, the type of the value of `source` (a struct type, or a variable
+# `Infer[source[key]]` in a parameter type: at each call, the type of the value of `source` (a struct type, or a variable
 # of a struct type) at the key passed for an earlier parameter.
 type Settings = Struct[{ volume: float, name: String, tags: Array[String] }]
 type Point = Struct[{ x: float, y: float }]
 
 var foo: Struct[{ key_1: int, key_2: Array[int] }] = { key_1 = 1, key_2 = [1] }
 
-func describe_foo(key: KeysOf[foo], value: InferValue[foo[key]]) -> String:
+func describe_foo(key: KeysOf[foo], value: Infer[foo[key]]) -> String:
 	return "%s = %s" % [key, value]
 
-func describe(key: KeysOf[Settings], value: InferValue[Settings[key]]) -> String:
+func describe(key: KeysOf[Settings], value: Infer[Settings[key]]) -> String:
 	return "%s = %s" % [key, value]
 
-func axis_value(axis: KeysOf[Point], value: InferValue[Point[axis]]) -> String:
+func axis_value(axis: KeysOf[Point], value: Infer[Point[axis]]) -> String:
 	return "%s = %s" % [axis, value]
 
 func test():

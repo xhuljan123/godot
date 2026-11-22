@@ -28,7 +28,7 @@ Table of contents:
   - [FunctionArgType](#functionargtype)
   - [TypeOf](#typeof)
   - [Infer](#infer)
-  - [InferValue](#infervalue)
+  - [Infer with keys](#infer-with-keys)
   - [BoundCallable](#boundcallable)
   - [self as a type](#self-as-a-type)
 - [Syntax](#syntax)
@@ -503,19 +503,31 @@ func _ready():
 	var plain: Callable = bar # A BoundCallable can still be used as a plain Callable.
 ```
 
-#### InferValue
+#### Infer with keys
 
-`value: InferValue[source[key]]` types a parameter from an **earlier** parameter `key` at each call: `value` must have the type of the value of `source` at the key passed for `key` (like `function set<K extends keyof T>(key: K, value: T[K])` in TypeScript). `source` is a struct type (`Settings`, `Other.Settings`), a GDScript class (`MyClass`, or `self` for the current class), or a variable, constant or member of one of them (`foo`, `self.foo`). A class is used like [`StructFromClass`](#structfromclass): its (non-static) member variables are the keys, with their declared types.
+`Infer[source[key]]` (`Infer` with a key access instead of a parameter name) types a parameter or a return type from the parameter `key` at each call: `value: Infer[source[key]]` must have the type of the value of `source` at the key passed for `key` (like `function set<K extends keyof T>(key: K, value: T[K])` in TypeScript). `source` is a struct type (`Settings`, `Other.Settings`), a GDScript class (`MyClass`, or `self` for the current class), or a variable, constant or member of one of them (`foo`, `self.foo`). A class is used like [`StructFromClass`](#structfromclass): its (non-static) member variables are the keys, with their declared types.
 
 - A constant key gives the declared type of that key: `set_value("key_1", 1)` checks `1` as an `int`, `set_value("key_2", [1])` checks `[1]` as an `Array[int]`.
 - A key typed as a `List`/`KeysOf` (or an enum, for int keys) gives the type shared by all of its keys, or `Variant` if they don't share one. Any other key gives `Variant` (the key itself is checked by its own parameter type, usually `KeysOf[source]`).
 - Inside the function, `value` is a `Variant`. The check happens at each call, statically.
-- `InferValue` can only be used in the type of a parameter, and `key` must be a parameter that comes before it. It can be nested like `Infer` (`Array[InferValue[foo[key]]]`).
+- In a parameter type, `key` must be a parameter that comes before it. It can be nested (`Array[Infer[foo[key]]]`).
+- As a return type, each call is typed as the value at the key, and any parameter can be used. Inside the function any value can be returned, and the call checks the returned value at runtime (like `-> Infer[param]`).
+
+```gdscript
+var settings: Struct[{ volume: float, title: String }] = { volume = 0.5, title = "Game" }
+
+func get_setting(key: KeysOf[settings]) -> Infer[settings[key]]:
+	return settings[key]
+
+func _ready():
+	var volume := get_setting("volume") # A float.
+	var title := get_setting("title") # A String.
+```
 
 ```gdscript
 var foo: Struct[{ key_1: int, key_2: Array[int] }] = { key_1 = 1, key_2 = [1] }
 
-func set_value(key: KeysOf[foo], value: InferValue[foo[key]]) -> void:
+func set_value(key: KeysOf[foo], value: Infer[foo[key]]) -> void:
 	pass
 
 func _ready():
@@ -528,7 +540,7 @@ func _ready():
 `source` can also be an earlier parameter (usually a `Variant`): then it's typed at each call from the argument passed for it, so one function works on any struct or object. A struct (or a dictionary literal) gives its keys, and a GDScript object its member variables. An argument whose type isn't known statically (an untyped variable, a plain `Dictionary`) skips the check.
 
 ```gdscript
-func set_on(target: Variant, key: KeysOf[Infer[target]], value: InferValue[target[key]]) -> void:
+func set_on(target: Variant, key: KeysOf[Infer[target]], value: Infer[target[key]]) -> void:
 	target[key] = value
 
 func _ready():
@@ -546,7 +558,7 @@ class_name Foo
 var a: int = 1
 var b := "test"
 
-func set_value(key: KeysOf[Foo], value: InferValue[self[key]]) -> void:
+func set_value(key: KeysOf[Foo], value: Infer[self[key]]) -> void:
 	set(key, value)
 
 func _ready():
@@ -564,7 +576,7 @@ func _ready():
 - `KeysOf[self]`: the names of the (non-static) member variables of the class.
 - `StructFromClass[self]`, `ExtractExportableVars[self]`: the struct type of the class.
 - `TypeOf[self]`: the class type (`TypeOf[self.member]` was already supported).
-- `InferValue[self[key]]`: the type of the member variable passed as `key` (see [InferValue](#infervalue)).
+- `Infer[self[key]]`: the type of the member variable passed as `key` (see [Infer with keys](#infer-with-keys)).
 - `Array[self]`, `DictionaryWithKeys[KeysOf[self], int]`, `-> self` and so on.
 
 ```gdscript
@@ -574,10 +586,10 @@ var b := "test"
 func snapshot() -> StructFromClass[self]:
 	return { a = a, b = b }
 
-func set_value(key: KeysOf[self], value: InferValue[self[key]]) -> void:
+func set_value(key: KeysOf[self], value: Infer[self[key]]) -> void:
 	set(key, value)
 
-static func describe(key: KeysOf[self], value: InferValue[self[key]]) -> String:
+static func describe(key: KeysOf[self], value: Infer[self[key]]) -> String:
 	return "%s = %s" % [key, value] # `self` in a type annotation works in static functions.
 ```
 
@@ -821,7 +833,7 @@ func _ready():
 
 ### Editor support
 
-- Syntax highlighting: `type` in type alias declarations uses the keyword color (like `var` and `func`). `Struct`, `Partial`, `Required`, `Omit`, `Pick`, `StructFromClass`, `ExtractExportableVars`, `StructToVariant`, `List`, `KeysOf`, `ValuesOf`, `DictionaryWithKeys`, `Record`, `NestedArray`, `NestedDictionary`, `FunctionArgType`, `TypeOf`, `Infer` and `InferValue` use the base type color when followed by `[`. `BoundCallable` uses the base type color.
+- Syntax highlighting: `type` in type alias declarations uses the keyword color (like `var` and `func`). `Struct`, `Partial`, `Required`, `Omit`, `Pick`, `StructFromClass`, `ExtractExportableVars`, `StructToVariant`, `List`, `KeysOf`, `ValuesOf`, `DictionaryWithKeys`, `Record`, `NestedArray`, `NestedDictionary`, `FunctionArgType`, `TypeOf` and `Infer` use the base type color when followed by `[`. `BoundCallable` uses the base type color.
 - Argument hints: `call()`, `call_deferred()` and `bind_strict()` on a callable with a known signature show its argument types.
 - Code completion: type names, struct keys (in literals, after `.`, in `Foo.` types), variables and members inside `TypeOf[...]`, parameters inside `Infer[...]`, `List`/`KeysOf`/`ValuesOf` values in assignments and call arguments, members after `?.`.
 - Hover tooltips, argument hints and the script documentation show the full types, including the aliased type of type aliases (`Foo (Struct[{ ... }])`), and `Infer[param]` as the return type of functions declared with it.

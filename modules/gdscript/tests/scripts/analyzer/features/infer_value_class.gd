@@ -1,4 +1,4 @@
-# `InferValue[source[key]]` with a class source: `self`, a class, or a variable of a class type. The (non-static) member
+# `Infer[source[key]]` with a class source: `self`, a class, or a variable of a class type. The (non-static) member
 # variables are the keys, like with `StructFromClass[...]`. `KeysOf[...]` of a class gives the names of its member variables.
 class Settings:
 	var volume: float = 1.0
@@ -9,14 +9,14 @@ var a: int = 1
 var b := "test"
 var settings := Settings.new()
 
-func set_own(key: List["a", "b"], value: InferValue[self[key]]) -> String:
+func set_own(key: List["a", "b"], value: Infer[self[key]]) -> String:
 	set(key, value)
 	return "%s = %s" % [key, get(key)]
 
-func describe(key: KeysOf[Settings], value: InferValue[Settings[key]]) -> String:
+func describe(key: KeysOf[Settings], value: Infer[Settings[key]]) -> String:
 	return "%s = %s" % [key, value]
 
-func set_setting(key: KeysOf[settings], value: InferValue[settings[key]]) -> String:
+func set_setting(key: KeysOf[settings], value: Infer[settings[key]]) -> String:
 	settings.set(key, value)
 	return "%s = %s" % [key, settings.get(key)]
 

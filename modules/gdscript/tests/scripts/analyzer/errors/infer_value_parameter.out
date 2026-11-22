@@ -1,5 +1,5 @@
 GDTEST_ANALYZER_ERROR
->> ERROR at line 7: "InferValue" in the type of parameter "value" can only refer to an earlier parameter, but "target" comes after it.
+>> ERROR at line 7: "Infer" in the type of parameter "value" can only refer to an earlier parameter, but "target" comes after it.
 >> ERROR at line 11: Cannot pass a value of type "String" as "float".
 >> ERROR at line 11: Invalid argument for "describe()" function: argument 3 should be "float" but is "String".
 >> ERROR at line 12: Cannot pass a value of type "String" as "int".

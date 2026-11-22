@@ -104,6 +104,9 @@ class GDScriptAnalyzer {
 	void resolve_infer_parameter_types(GDScriptParser::FunctionNode *p_function, int p_index);
 	static void collect_infer_type_nodes(GDScriptParser::TypeNode *p_type, LocalVector<GDScriptParser::TypeNode *> &r_nodes);
 	void resolve_infer_parameter_template_type(GDScriptParser::FunctionNode *p_function, int p_index, const LocalVector<GDScriptParser::TypeNode *> &p_infer_nodes);
+	bool resolve_infer_return_template(GDScriptParser::FunctionNode *p_function);
+	GDScriptParser::DataType make_infer_erased_type(const GDScriptParser::TypeNode *p_type);
+	GDScriptParser::DataType resolve_infer_template(GDScriptParser::TypeNode *p_type, GDScriptParser::ClassNode *p_class, const String &p_description, const HashMap<int, GDScriptParser::DataType> &p_argument_types, const HashMap<int, Variant> &p_argument_values, const GDScriptParser::Node *p_error_node);
 	GDScriptParser::DataType resolve_infer_parameter_template(const GDScriptParser::ParameterNode *p_parameter, const HashMap<int, GDScriptParser::DataType> &p_argument_types, const HashMap<int, Variant> &p_argument_values, const GDScriptParser::Node *p_error_node);
 	HashSet<int> apply_infer_parameter_types(GDScriptParser::CallNode *p_call, List<GDScriptParser::DataType> &r_par_types);
 	GDScriptParser::DataType infer_type_from_call_argument(GDScriptParser::CallNode *p_call, int p_index, const List<GDScriptParser::DataType> &p_par_types, const GDScriptParser::DataType &p_unconverted_argument_type);

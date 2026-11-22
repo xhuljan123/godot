@@ -160,6 +160,9 @@ public:
 		Vector<int> infer_element_parameter_indices;
 		// Type of a parameter at a call site whose type has `Infer` nested deeper: resolved again with the arguments.
 		const ParameterNode *infer_template_parameter = nullptr;
+		// Return type of a function declared with `-> Infer[...]` (or `Infer` nested in its return type): each call
+		// is typed by resolving the return type again with the arguments (see `FunctionNode::return_infer_template`).
+		const FunctionNode *infer_return_template_function = nullptr;
 
 		enum Kind {
 			BUILTIN,
@@ -521,6 +524,7 @@ public:
 			infer_parameter_name = p_other.infer_parameter_name;
 			infer_element_parameter_indices = p_other.infer_element_parameter_indices;
 			infer_template_parameter = p_other.infer_template_parameter;
+			infer_return_template_function = p_other.infer_return_template_function;
 		}
 
 		DataType() = default;
@@ -1154,6 +1158,11 @@ public:
 
 		TypeNode *return_type = nullptr;
 		DataType return_type_constraint;
+		// `-> Infer[source[key]]`, `-> Array[Infer[...]]`, `-> KeysOf[Infer[a]]`: the return type, resolved again at
+		// each call with the arguments it refers to (like parameter types, see `ParameterNode::infer_template`).
+		TypeNode *return_infer_template = nullptr;
+		ClassNode *return_infer_template_class = nullptr;
+		Vector<int> return_infer_template_parameters;
 
 		SuiteNode *body = nullptr;
 		bool is_abstract = false;
@@ -1605,13 +1614,13 @@ public:
 		// In a parameter type: the index of the parameter it refers to, once validated by the analyzer. -1 otherwise.
 		int infer_parameter_index = -1;
 
-		// `value: InferValue[source[key]]` in the type of a parameter: the type of the value of `source` (a struct type, or a
+		// `value: Infer[source[key]]` in the type of a parameter: the type of the value of `source` (a struct type, or a
 		// variable of a struct type) at the key passed for the earlier parameter `key`, at each call. Like `Infer`, the analyzer
 		// sets `infer_parameter_index` (to the index of `key`) once validated.
 		bool is_infer_value = false;
 		ExpressionNode *infer_value_expression = nullptr;
 		DataType infer_value_source_type; // The struct type of `source`, once validated.
-		// `InferValue[target[key]]` where `target` is an earlier parameter: its index. The source type is then the type of the
+		// `Infer[target[key]]` where `target` is an earlier parameter: its index. The source type is then the type of the
 		// argument passed for it at each call (see `GDScriptAnalyzer::resolve_infer_value_type()`). -1 otherwise.
 		int infer_value_source_parameter_index = -1;
 
@@ -1820,7 +1829,7 @@ private:
 	DictionaryNode *completion_dictionary_key_of = nullptr; // Dictionary literal whose key is being parsed.
 	List<CompletionCall> completion_call_stack;
 	bool in_lambda = false;
-	// Parsing the argument of `TypeOf[...]` or `InferValue[...]`: a type annotation, where `self` (the current class) can be used
+	// Parsing the argument of `TypeOf[...]` or `Infer[...]`: a type annotation, where `self` (the current class) can be used
 	// in static functions too.
 	int type_annotation_expression_depth = 0;
 	bool lambda_ended = false; // Marker for when a lambda ends, to apply an end of statement if needed.

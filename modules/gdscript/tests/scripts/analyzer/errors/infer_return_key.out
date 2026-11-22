@@ -1,0 +1,4 @@
+GDTEST_ANALYZER_ERROR
+>> ERROR at line 7: Identifier "missing" not declared in the current scope.
+>> ERROR at line 11: Cannot assign a value of type float to variable "volume" with specified type String.
+>> ERROR at line 12: Cannot assign a value of type String to variable "title" with specified type int.

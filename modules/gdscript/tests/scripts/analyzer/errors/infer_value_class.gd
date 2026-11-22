@@ -4,10 +4,10 @@ class Settings:
 
 var a: int = 1
 
-func describe(key: KeysOf[Settings], value: InferValue[Settings[key]]) -> void:
+func describe(key: KeysOf[Settings], value: Infer[Settings[key]]) -> void:
 	print(key, value)
 
-func set_own(key: String, value: InferValue[self[key]]) -> void:
+func set_own(key: String, value: Infer[self[key]]) -> void:
 	print(key, value)
 
 func test():
