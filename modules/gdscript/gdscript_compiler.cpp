@@ -998,8 +998,9 @@ GDScriptCodeGenerator::Address GDScriptCompiler::_parse_expression(CodeGen &code
 
 			if (is_optional_struct_key) {
 				_write_struct_key_get(codegen, raw_value, base, subscript->base->type_constraint, struct_key_index);
-			} else if (subscript->is_optional && struct_key_index < 0) {
-				// A missing key or member, or an out of bounds index, gives `null`.
+			} else if (subscript->is_optional) {
+				// A missing key or member, or an out of bounds index, gives `null`. Required struct keys too: struct values
+				// are plain dictionaries at runtime, so one can still miss a key (`a?.b?.c` with `b: Struct[{ c: int }]`).
 				gen->write_get_optional(raw_value, named ? codegen.add_constant(name) : index, base);
 			} else if (named) {
 				gen->write_get_named(raw_value, name, base);

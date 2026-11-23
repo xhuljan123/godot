@@ -64,3 +64,20 @@ func test():
 
 	var value: int = list?.["foo"]
 	print(value)
+
+	# Chains of several optional links on dictionaries: any missing key gives `null`.
+	var nested: Dictionary = {}
+	print(nested?.bar?.test)
+	print(nested?.["bar"]?.["test"])
+	nested = { "bar": { "test": 3 } }
+	print(nested?.bar?.test)
+	print(nested?.bar?.missing)
+	print(nested?.["bar"]?.["test"])
+
+	# A required struct key read with `?.` gives `null` if the dictionary doesn't have it at runtime.
+	var data: Struct[{ inner: Struct[{ id: int }] }] = { inner = { id = 7 } }
+	print(data?.inner?.id)
+	var raw: Dictionary = data
+	var raw_inner: Dictionary = raw["inner"]
+	raw_inner.erase("id")
+	print(data?.inner?.id)

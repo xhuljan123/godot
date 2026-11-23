@@ -652,7 +652,12 @@ print(array?.[5]) # null instead of an out of bounds error.
 var user: Struct[{ name: String, age?: int, role = "guest" }] = { name = "Bob" }
 print(user?.["age"]) # null
 print(user?.["role"]) # "guest" (the default value)
+
+var nested: Dictionary = {}
+print(nested?.bar?.test) # null: each `?.` link gives null for a missing key.
 ```
+
+A `?.` link gives `null` for a missing key even when the key is a required key of a struct type (struct values are plain dictionaries at runtime, so one can still miss a key).
 
 `?.` can't be used in an assignment target. A chain that can give `null` is typed as a weak type, so assigning it to a typed variable is checked at runtime.
 
