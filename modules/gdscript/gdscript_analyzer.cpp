@@ -1307,6 +1307,7 @@ int GDScriptAnalyzer::resolve_infer_value_reference(GDScriptParser::FunctionNode
 			}
 			p_type->infer_value_source_parameter_index = source_index;
 			p_type->infer_value_source_type = GDScriptParser::DataType();
+			p_type->infer_value_source_class = nullptr;
 			p_type->infer_parameter_index = index;
 			return index;
 		}
@@ -1331,8 +1332,10 @@ int GDScriptAnalyzer::resolve_infer_value_reference(GDScriptParser::FunctionNode
 		return -1; // Error already reported (like an undeclared identifier, typed as `Variant`).
 	}
 	source_type = type_from_metatype(source_type);
+	GDScriptParser::ClassNode *source_class = nullptr;
 	if (source_type.kind == GDScriptParser::DataType::CLASS && source_type.class_type != nullptr) {
 		// `Infer[self[key]]`, `Infer[MyClass[key]]`: the member variables of the class.
+		source_class = source_type.class_type;
 		source_type = make_struct_type_from_class(source_type.class_type, subscript->base);
 	}
 	if (!source_type.is_struct_type()) {
@@ -1340,6 +1343,7 @@ int GDScriptAnalyzer::resolve_infer_value_reference(GDScriptParser::FunctionNode
 		return -1;
 	}
 	p_type->infer_value_source_type = source_type;
+	p_type->infer_value_source_class = source_class;
 	p_type->infer_parameter_index = index;
 	return index;
 }
@@ -1355,6 +1359,7 @@ GDScriptParser::DataType GDScriptAnalyzer::resolve_infer_value_type(GDScriptPars
 	GDScriptParser::DataType variant_type = GDScriptParser::DataType::get_variant_type();
 	variant_type.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
 	GDScriptParser::DataType source_type = p_type->infer_value_source_type;
+	const GDScriptParser::ClassNode *source_class = p_type->infer_value_source_class;
 	if (p_type->infer_value_source_parameter_index >= 0) {
 		const GDScriptParser::DataType *argument_type = infer_substitution_types != nullptr ? infer_substitution_types->getptr(p_type->infer_value_source_parameter_index) : nullptr;
 		if (argument_type == nullptr) {
@@ -1362,6 +1367,7 @@ GDScriptParser::DataType GDScriptAnalyzer::resolve_infer_value_type(GDScriptPars
 		}
 		source_type = type_from_metatype(*argument_type);
 		if (source_type.kind == GDScriptParser::DataType::CLASS && source_type.class_type != nullptr) {
+			source_class = source_type.class_type;
 			source_type = make_struct_type_from_class(source_type.class_type, p_type);
 		}
 		if (!source_type.is_struct_type()) {
@@ -1414,6 +1420,16 @@ GDScriptParser::DataType GDScriptAnalyzer::resolve_infer_value_type(GDScriptPars
 	common_type.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
 	common_type.is_constant = false;
 	common_type.is_read_only = false;
+	if (source_class != nullptr) {
+		// The value can be typed as a class from a script this one doesn't depend on (`var config: Config` in the source
+		// class): load its parser through the source class, like for the type of a member accessed on it (see
+		// `resolve_class_member()`), so members can be looked up on the value.
+		ensure_cached_external_parser_for_class(source_class, nullptr, "Trying to resolve Infer value type", p_type);
+		ensure_cached_external_parser_for_class(common_type.class_type, source_class, "Trying to resolve Infer value type", p_type);
+		for (int i = 0; i < common_type.get_container_element_type_count(); ++i) {
+			ensure_cached_external_parser_for_class(common_type.get_container_element_type(i).class_type, source_class, "Trying to resolve Infer value type", p_type);
+		}
+	}
 	return common_type;
 }
 
