@@ -76,6 +76,27 @@ String GDScriptDataType::validate_struct(const Dictionary &p_dictionary, const S
 			return vformat(R"(Key "%s" should be "%s" but is "%s".)", path, key_type.to_string(), value_type_name);
 		}
 	}
+	// Struct types are exact: a key that the type doesn't have is an error (like in the analyzer).
+	if (!p_dictionary.is_empty()) {
+		const Array dictionary_keys = p_dictionary.keys();
+		for (int i = 0; i < dictionary_keys.size(); i++) {
+			const Variant &dictionary_key = dictionary_keys[i];
+			bool found = false;
+			for (int j = 0; j < struct_keys.size(); j++) {
+				const Variant expected_key = j < struct_key_values.size() ? struct_key_values[j] : Variant(struct_keys[j]);
+				if (StringLikeVariantComparator::compare(dictionary_key, expected_key)) {
+					found = true;
+					break;
+				}
+			}
+			if (!found) {
+				const bool is_string = dictionary_key.get_type() == Variant::STRING || dictionary_key.get_type() == Variant::STRING_NAME;
+				const String key_text = is_string ? String(dictionary_key) : dictionary_key.get_construct_string();
+				const String path = p_path.is_empty() ? key_text : p_path + "." + key_text;
+				return vformat(R"(Key "%s" does not exist in "%s".)", path, to_string());
+			}
+		}
+	}
 	return String();
 }
 

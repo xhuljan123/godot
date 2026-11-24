@@ -116,9 +116,6 @@ public:
 		// `DictionaryWithKeys[List[0, 1], Type]` (whose name is the number, like "0").
 		Vector<Variant> struct_key_values;
 		// No keys other than the declared ones are accepted from another struct type (structural typing normally allows extra keys).
-		// Used for the `StructRef` constructor and `assign()`, where unknown keys are errors.
-		bool struct_is_exact = false;
-
 		StringName alias_name; // Set if this type comes from a type alias (`type Name = ...`). Used for display only.
 
 		// Accepted values (`List["foo", "bar", 1]` and `KeysOf[...]`), like a literal union in TypeScript.
@@ -441,7 +438,6 @@ public:
 			struct_key_has_default.clear();
 			struct_key_defaults.clear();
 			struct_key_values.clear();
-			struct_is_exact = false;
 		}
 
 		bool can_reference(const DataType &p_other) const;
@@ -507,7 +503,6 @@ public:
 			struct_key_has_default = p_other.struct_key_has_default;
 			struct_key_defaults = p_other.struct_key_defaults;
 			struct_key_values = p_other.struct_key_values;
-			struct_is_exact = p_other.struct_is_exact;
 			alias_name = p_other.alias_name;
 			is_value_list = p_other.is_value_list;
 			value_list_values = p_other.value_list_values;

@@ -12,7 +12,7 @@ func test():
 	print(with_default.baz, " ", with_default.bar)
 
 	var foo: Foo = { foo = 2, bar = "y" }
-	bar = foo # A struct with more keys can be assigned (structural typing).
+	bar = { foo = foo.foo } # Struct types are exact: `bar = foo` is an error (extra keys).
 	print(bar.foo)
 
 	var key: KeysOf[Bar] = "foo"

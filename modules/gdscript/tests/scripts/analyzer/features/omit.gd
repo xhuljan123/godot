@@ -7,7 +7,7 @@ func show(user: Omit[User, { id, password }]) -> String:
 
 func test():
 	var user: User = { id = 1, name = "Bob", password = "secret" }
-	print(show(user)) # A struct with more keys can be passed (structural typing).
+	print(show({ name = user.name, role = user.role })) # Struct types are exact: `show(user)` is an error (extra keys).
 
 	var public: PublicUser = { id = 2, name = "Ann" } # `password` isn't required anymore.
 	print(public.id, " ", public.role) # Default values are kept.
