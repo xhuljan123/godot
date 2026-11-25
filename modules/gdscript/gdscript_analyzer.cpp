@@ -973,15 +973,18 @@ GDScriptParser::DataType GDScriptAnalyzer::resolve_keys_of_type(GDScriptParser::
 // `FunctionArgType[function]`: `Callable[...]` with the argument types of a function (`foo`, `Other.foo`, `some_lambda_constant`),
 // like `Parameters<typeof foo>` in TypeScript. Arguments with a default value stay optional. The return type isn't included.
 // Returns an unset type (after reporting an error) on failure.
+// Also used by `ExtractArg[function][index]` (the messages name the utility type that is used).
 GDScriptParser::DataType GDScriptAnalyzer::resolve_function_arg_type(GDScriptParser::TypeNode *p_type) {
-	static constexpr const char *expected = R"("FunctionArgType" expects a function)";
+	const bool is_extract_arg = p_type->struct_modifier == GDScriptParser::TypeNode::STRUCT_MODIFIER_EXTRACT_ARG;
+	const String utility_name = is_extract_arg ? "ExtractArg" : "FunctionArgType";
+	const String expected = vformat(R"("%s" expects a function)", utility_name);
 	GDScriptParser::TypeNode *argument = p_type->get_container_type_or_null(0);
 	if (argument == nullptr) {
 		return GDScriptParser::DataType(); // Error already reported by the parser.
 	}
 	const bool is_name = !argument->type_chain.is_empty() && argument->container_types.is_empty() && !argument->is_struct && argument->struct_modifier == GDScriptParser::TypeNode::STRUCT_MODIFIER_NONE && !argument->is_value_list && !argument->is_callable_signature && !argument->is_nested_container && !argument->is_self_type;
 	if (!is_name) {
-		push_error(vformat(R"(%s name, like "FunctionArgType[my_function]".)", expected), argument);
+		push_error(vformat(R"(%s name, like "%s[my_function]%s".)", expected, utility_name, is_extract_arg ? "[0]" : ""), argument);
 		return GDScriptParser::DataType();
 	}
 
@@ -1019,6 +1022,50 @@ GDScriptParser::DataType GDScriptAnalyzer::resolve_function_arg_type(GDScriptPar
 	result.callable_arg_types = function_type.callable_arg_types;
 	result.callable_default_arg_count = function_type.callable_default_arg_count;
 	result.callable_is_vararg = function_type.callable_is_vararg;
+	return result;
+}
+
+// `ExtractArg[function][index]`: the type of the argument at `index` of a function (`foo`, `Other.foo`, `some_lambda_constant`),
+// like `Parameters<typeof foo>[index]` in TypeScript. The index is a constant integer expression. An untyped argument gives
+// `Variant`. Returns an unset type (after reporting an error) on failure.
+GDScriptParser::DataType GDScriptAnalyzer::resolve_extract_arg_type(GDScriptParser::TypeNode *p_type) {
+	const GDScriptParser::DataType callable_type = resolve_function_arg_type(p_type);
+	if (!callable_type.is_set() || p_type->extract_arg_index == nullptr) {
+		return GDScriptParser::DataType(); // Error already reported.
+	}
+
+	GDScriptParser::ExpressionNode *index = p_type->extract_arg_index;
+	reduce_expression(index);
+	if (!index->is_constant || index->reduced_value.get_type() != Variant::INT) {
+		push_error(R"(The argument index of "ExtractArg" must be a constant integer, like "ExtractArg[my_function][0]".)", index);
+		return GDScriptParser::DataType();
+	}
+
+	const int64_t arg_index = index->reduced_value;
+	const int64_t arg_count = callable_type.callable_arg_types.size();
+	if (arg_index < 0 || arg_index >= arg_count) {
+		const GDScriptParser::TypeNode *function_node = p_type->get_container_type_or_null(0);
+		String function_name;
+		for (uint32_t i = 0; function_node != nullptr && i < function_node->type_chain.size(); i++) {
+			function_name += (i > 0 ? "." : "") + String(function_node->type_chain[i]->name);
+		}
+		if (arg_count == 0) {
+			push_error(vformat(R"(Cannot extract argument %d of "%s", which has no arguments.)", arg_index, function_name), index);
+		} else {
+			push_error(vformat(R"(Argument index %d is out of range for "%s", which has %d argument%s (valid indices: 0 to %d).)", arg_index, function_name, arg_count, arg_count == 1 ? "" : "s", arg_count - 1), index);
+		}
+		return GDScriptParser::DataType();
+	}
+
+	GDScriptParser::DataType result = callable_type.callable_arg_types[arg_index];
+	if (!result.is_set() || result.kind == GDScriptParser::DataType::UNRESOLVED) {
+		result = GDScriptParser::DataType();
+		result.kind = GDScriptParser::DataType::VARIANT; // Untyped argument.
+	}
+	result.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
+	result.is_meta_type = false;
+	result.is_constant = false;
+	result.is_read_only = false;
 	return result;
 }
 
@@ -1475,7 +1522,7 @@ GDScriptParser::DataType GDScriptAnalyzer::make_infer_erased_type(const GDScript
 	erased_type.is_meta_type = true;
 	erased_type.kind = GDScriptParser::DataType::BUILTIN;
 	const StringName base_name = p_type->type_chain.is_empty() ? StringName() : p_type->type_chain[0]->name;
-	const bool is_struct_like = p_type->is_struct || (p_type->struct_modifier != GDScriptParser::TypeNode::STRUCT_MODIFIER_NONE && p_type->struct_modifier != GDScriptParser::TypeNode::STRUCT_MODIFIER_KEYS_OF && p_type->struct_modifier != GDScriptParser::TypeNode::STRUCT_MODIFIER_VALUES_OF && p_type->struct_modifier != GDScriptParser::TypeNode::STRUCT_MODIFIER_FUNCTION_ARG_TYPE);
+	const bool is_struct_like = p_type->is_struct || (p_type->struct_modifier != GDScriptParser::TypeNode::STRUCT_MODIFIER_NONE && p_type->struct_modifier != GDScriptParser::TypeNode::STRUCT_MODIFIER_KEYS_OF && p_type->struct_modifier != GDScriptParser::TypeNode::STRUCT_MODIFIER_VALUES_OF && p_type->struct_modifier != GDScriptParser::TypeNode::STRUCT_MODIFIER_FUNCTION_ARG_TYPE && p_type->struct_modifier != GDScriptParser::TypeNode::STRUCT_MODIFIER_EXTRACT_ARG);
 	if (is_struct_like || base_name == SNAME("Dictionary") || base_name == SNAME("NestedDictionary")) {
 		erased_type.builtin_type = Variant::DICTIONARY;
 	} else if (base_name == SNAME("Array") || base_name == SNAME("NestedArray")) {
@@ -2227,6 +2274,16 @@ GDScriptParser::DataType GDScriptAnalyzer::resolve_datatype(GDScriptParser::Type
 	if (p_type->is_type_of) {
 		// `TypeOf[value]`: the type of a variable, constant, parameter, member or struct key.
 		result = resolve_type_of(p_type);
+		if (!result.is_set()) {
+			return bad_type; // Error already reported.
+		}
+		p_type->resolved_type = result;
+		return result;
+	}
+
+	if (p_type->struct_modifier == GDScriptParser::TypeNode::STRUCT_MODIFIER_EXTRACT_ARG) {
+		// `ExtractArg[function][index]`: the type of one argument of the function.
+		result = resolve_extract_arg_type(p_type);
 		if (!result.is_set()) {
 			return bad_type; // Error already reported.
 		}

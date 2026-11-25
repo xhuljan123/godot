@@ -1,0 +1,8 @@
+GDTEST_ANALYZER_ERROR
+>> ERROR at line 9: Argument index 2 is out of range for "foo", which has 2 arguments (valid indices: 0 to 1).
+>> ERROR at line 10: Argument index -1 is out of range for "foo", which has 2 arguments (valid indices: 0 to 1).
+>> ERROR at line 11: Cannot extract argument 0 of "no_args", which has no arguments.
+>> ERROR at line 12: The argument index of "ExtractArg" must be a constant integer, like "ExtractArg[my_function][0]".
+>> ERROR at line 13: "ExtractArg" expects a function, but "NUMBER" is "int".
+>> ERROR at line 14: "ExtractArg" expects a function, but "Node" is "a type".
+>> ERROR at line 18: Cannot assign a value of type int to variable "value" with specified type String.

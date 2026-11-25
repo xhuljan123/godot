@@ -1576,6 +1576,7 @@ public:
 			STRUCT_MODIFIER_KEYS_OF, // `KeysOf[Source]`: a `List[...]` of the names of an enum, or of the keys of a struct type or a constant dictionary.
 			STRUCT_MODIFIER_VALUES_OF, // `ValuesOf[Source]`: a `List[...]` of the values of an enum, or of a constant dictionary or array (or a variable initialized with one).
 			STRUCT_MODIFIER_FUNCTION_ARG_TYPE, // `FunctionArgType[function]`: a `Callable[...]` with the argument types of a function.
+			STRUCT_MODIFIER_EXTRACT_ARG, // `ExtractArg[function][index]`: the type of one argument of a function.
 			STRUCT_MODIFIER_DICTIONARY_WITH_KEYS, // `DictionaryWithKeys[ListType, ValueType]`: a struct type with a required key for each list value.
 			STRUCT_MODIFIER_RECORD, // `Record[ListType, ValueType]`: a struct type with an optional key for each list value.
 		};
@@ -1587,6 +1588,8 @@ public:
 			Node *key_node = nullptr; // IdentifierNode or LiteralNode, for error reporting.
 		};
 		LocalVector<StructModifierKey> struct_modifier_excluded_keys;
+		// `ExtractArg[function][index]`: the index of the argument (a constant integer expression), checked by the analyzer.
+		ExpressionNode *extract_arg_index = nullptr;
 
 		// `TypeOf[value]`: the type of a variable, constant, parameter, member or struct key.
 		// The argument is an identifier, optionally followed by attributes (`node.position`, `config.key`).

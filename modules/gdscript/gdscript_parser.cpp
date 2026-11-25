@@ -4075,7 +4075,7 @@ GDScriptParser::TypeNode *GDScriptParser::parse_type(bool p_allow_void) {
 		return type;
 	}
 
-	// Utility types: `Partial[StructType]`, `Required[StructType]`, `StructFromClass[ClassType]`, `ExtractExportableVars[ClassType]`, `StructToVariant[StructType]`, `Omit`, `Pick`, `KeysOf[Source]`, `ValuesOf[Source]`, `FunctionArgType[function]`, `DictionaryWithKeys[Keys, Value]` and `Record[Keys, Value]`.
+	// Utility types: `Partial[StructType]`, `Required[StructType]`, `StructFromClass[ClassType]`, `ExtractExportableVars[ClassType]`, `StructToVariant[StructType]`, `Omit`, `Pick`, `KeysOf[Source]`, `ValuesOf[Source]`, `FunctionArgType[function]`, `ExtractArg[function][index]`, `DictionaryWithKeys[Keys, Value]` and `Record[Keys, Value]`.
 	TypeNode::StructModifier struct_modifier = TypeNode::STRUCT_MODIFIER_NONE;
 	if (type_element->name == SNAME("Partial")) {
 		struct_modifier = TypeNode::STRUCT_MODIFIER_PARTIAL;
@@ -4097,6 +4097,8 @@ GDScriptParser::TypeNode *GDScriptParser::parse_type(bool p_allow_void) {
 		struct_modifier = TypeNode::STRUCT_MODIFIER_VALUES_OF;
 	} else if (type_element->name == SNAME("FunctionArgType")) {
 		struct_modifier = TypeNode::STRUCT_MODIFIER_FUNCTION_ARG_TYPE;
+	} else if (type_element->name == SNAME("ExtractArg")) {
+		struct_modifier = TypeNode::STRUCT_MODIFIER_EXTRACT_ARG;
 	} else if (type_element->name == SNAME("DictionaryWithKeys")) {
 		struct_modifier = TypeNode::STRUCT_MODIFIER_DICTIONARY_WITH_KEYS;
 	} else if (type_element->name == SNAME("Record")) {
@@ -4171,6 +4173,20 @@ GDScriptParser::TypeNode *GDScriptParser::parse_type(bool p_allow_void) {
 		}
 		pop_multiline();
 		consume(GDScriptTokenizer::Token::BRACKET_CLOSE, vformat(R"(Expected closing "]" after "%s" type argument.)", type_element->name));
+		if (struct_modifier == TypeNode::STRUCT_MODIFIER_EXTRACT_ARG) {
+			// `ExtractArg[function][index]`: the index is a constant expression, checked by the analyzer.
+			if (match(GDScriptTokenizer::Token::BRACKET_OPEN)) {
+				push_multiline(true);
+				type->extract_arg_index = parse_expression(false);
+				if (type->extract_arg_index == nullptr) {
+					push_error(R"(Expected an argument index after "ExtractArg[function][".)");
+				}
+				pop_multiline();
+				consume(GDScriptTokenizer::Token::BRACKET_CLOSE, R"(Expected closing "]" after the argument index of "ExtractArg".)");
+			} else {
+				push_error(R"("ExtractArg" expects the index of the argument after the function, like "ExtractArg[my_function][0]".)", type);
+			}
+		}
 		complete_extents(type);
 		return type;
 	}

@@ -26,6 +26,7 @@ Table of contents:
   - [NestedArray and NestedDictionary](#nestedarray-and-nesteddictionary)
   - [Typed callables](#typed-callables-callableargsreturn)
   - [FunctionArgType](#functionargtype)
+  - [ExtractArg](#extractarg)
   - [TypeOf](#typeof)
   - [Infer](#infer)
   - [Infer with keys](#infer-with-keys)
@@ -388,6 +389,23 @@ func _ready():
 	run(foo)
 	run(func(a: int, b: String = "") -> String: return b) # Any function with compatible arguments.
 	run(func(a: String) -> void: pass) # Error: parameter 1 cannot receive "int".
+```
+
+#### ExtractArg
+
+`ExtractArg[function][index]` is the type of one argument of a function (like `Parameters<typeof foo>[index]` in TypeScript). The function can be a function of the current class, of another class (`Other.function`) or a typed callable constant. The index starts at 0 and must be a constant integer. An untyped argument gives `Variant`, an argument declared with `:=` gives its inferred type.
+
+```gdscript
+func foo(arg1: int, arg2: Struct[{ key_1: int }]):
+	pass
+
+type A = ExtractArg[foo][0] # int
+type B = ExtractArg[foo][1] # Struct[{ key_1: int }]
+
+func _ready():
+	var b: B = { key_1 = 3 }
+	foo(1, b)
+	var c: ExtractArg[foo][2] # Error: Argument index 2 is out of range for "foo", which has 2 arguments (valid indices: 0 to 1).
 ```
 
 #### TypeOf
@@ -849,7 +867,7 @@ func _ready():
 
 ### Editor support
 
-- Syntax highlighting: `type` in type alias declarations uses the keyword color (like `var` and `func`). `Struct`, `Partial`, `Required`, `Omit`, `Pick`, `StructFromClass`, `ExtractExportableVars`, `StructToVariant`, `List`, `KeysOf`, `ValuesOf`, `DictionaryWithKeys`, `Record`, `NestedArray`, `NestedDictionary`, `FunctionArgType`, `TypeOf` and `Infer` use the base type color when followed by `[`. `BoundCallable` uses the base type color.
+- Syntax highlighting: `type` in type alias declarations uses the keyword color (like `var` and `func`). `Struct`, `Partial`, `Required`, `Omit`, `Pick`, `StructFromClass`, `ExtractExportableVars`, `StructToVariant`, `List`, `KeysOf`, `ValuesOf`, `DictionaryWithKeys`, `Record`, `NestedArray`, `NestedDictionary`, `FunctionArgType`, `ExtractArg`, `TypeOf` and `Infer` use the base type color when followed by `[`. `BoundCallable` uses the base type color.
 - Argument hints: `call()`, `call_deferred()` and `bind_strict()` on a callable with a known signature show its argument types.
 - Code completion: type names, struct keys (in literals, after `.`, in `Foo.` types), variables and members inside `TypeOf[...]`, parameters inside `Infer[...]`, `List`/`KeysOf`/`ValuesOf` values in assignments and call arguments, members after `?.`.
 - Hover tooltips, argument hints and the script documentation show the full types, including the aliased type of type aliases (`Foo (Struct[{ ... }])`), and `Infer[param]` as the return type of functions declared with it.

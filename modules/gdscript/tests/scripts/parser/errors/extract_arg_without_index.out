@@ -1,0 +1,2 @@
+GDTEST_PARSER_ERROR
+"ExtractArg" expects the index of the argument after the function, like "ExtractArg[my_function][0]".

@@ -95,6 +95,7 @@ class GDScriptAnalyzer {
 	static GDScriptParser::DataType make_value_list_type(const Vector<Variant> &p_values);
 	GDScriptParser::DataType resolve_keys_of_type(GDScriptParser::TypeNode *p_type, bool p_values = false);
 	GDScriptParser::DataType resolve_function_arg_type(GDScriptParser::TypeNode *p_type);
+	GDScriptParser::DataType resolve_extract_arg_type(GDScriptParser::TypeNode *p_type);
 	GDScriptParser::DataType resolve_type_of(GDScriptParser::TypeNode *p_type);
 	GDScriptParser::DataType resolve_infer_return_type(GDScriptParser::FunctionNode *p_function);
 	int resolve_infer_parameter_reference(GDScriptParser::FunctionNode *p_function, int p_index, GDScriptParser::TypeNode *p_type);
