@@ -79,5 +79,5 @@ func test():
 	print(data?.inner?.id)
 	var raw: Dictionary = data
 	var raw_inner: Dictionary = raw["inner"]
-	raw_inner.erase("id")
+	var _erased := raw_inner.erase("id")
 	print(data?.inner?.id)

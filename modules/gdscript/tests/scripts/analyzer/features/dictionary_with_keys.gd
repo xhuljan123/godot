@@ -13,7 +13,7 @@ func test():
 	print(total(python_style))
 	var stats: Stats = { HEALTH = 10, MANA = 5.5 }
 	print(stats.HEALTH + stats.MANA)
-	var as_struct: Struct[{ foo: int }] = bar
+	var as_struct: Struct[{ foo: int, bar: int }] = bar # Struct types are exact: every key of `Foo` is needed.
 	print(as_struct.foo)
 	var dictionary: Dictionary = bar
 	print(dictionary.size())
