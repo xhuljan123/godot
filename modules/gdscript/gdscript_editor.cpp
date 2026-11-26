@@ -3948,39 +3948,46 @@ static void _find_call_arguments(GDScriptParser::CompletionContext &p_context, c
 			GDScriptCompletionIdentifier base;
 
 			if (_guess_identifier_type(completion_context, type->type_chain[0], base)) {
-				// `type Bar = Foo.key`: the keys of a struct type (and of its nested struct types).
-				GDScriptParser::DataType struct_type = base.type;
-				struct_type.is_meta_type = false;
-				if (struct_type.is_struct_type()) {
-					for (int i = 1; i < completion_context.type_chain_index && struct_type.is_struct_type(); i++) {
-						const int key_index = struct_type.find_struct_key(type->type_chain[i]->name);
-						if (key_index < 0) {
-							struct_type = GDScriptParser::DataType();
-							break;
-						}
-						struct_type = struct_type.struct_key_types[key_index];
-					}
-					if (struct_type.is_struct_type()) {
-						for (int i = 0; i < struct_type.struct_keys.size(); i++) {
-							EditorLanguage::CompletionOption option(struct_type.struct_keys[i], EditorLanguage::CompletionKind::MEMBER_VARIABLE);
-							options.insert(option.display, option);
-						}
-					}
-					r_forced = true;
-					break;
-				}
-
+				// Walk the qualifying part of the chain (`Inner.`, `External.`, `GlobalClass.`) until a struct type is reached.
 				bool found = true;
-				for (int i = 1; i < completion_context.type_chain_index; i++) {
+				int chain_index = 1;
+				while (chain_index < completion_context.type_chain_index) {
+					GDScriptParser::DataType base_value_type = base.type;
+					base_value_type.is_meta_type = false;
+					if (base_value_type.is_struct_type()) {
+						break;
+					}
 					GDScriptCompletionIdentifier ci;
-					found = _guess_identifier_type_from_base(completion_context, base, type->type_chain[i]->name, ci);
+					found = _guess_identifier_type_from_base(completion_context, base, type->type_chain[chain_index]->name, ci);
 					base = ci;
+					chain_index++;
 					if (!found) {
 						break;
 					}
 				}
+
 				if (found) {
-					_find_identifiers_in_base(base, false, true, true, options, 0);
+					// `type Bar = Foo.key` / `type Bar = Inner.Foo.key`: the keys of a struct type (and of its nested struct types).
+					GDScriptParser::DataType struct_type = base.type;
+					struct_type.is_meta_type = false;
+					if (struct_type.is_struct_type()) {
+						for (int i = chain_index; i < completion_context.type_chain_index && struct_type.is_struct_type(); i++) {
+							const int key_index = struct_type.find_struct_key(type->type_chain[i]->name);
+							if (key_index < 0) {
+								struct_type = GDScriptParser::DataType();
+								break;
+							}
+							struct_type = struct_type.struct_key_types[key_index];
+						}
+						if (struct_type.is_struct_type()) {
+							for (int i = 0; i < struct_type.struct_keys.size(); i++) {
+								EditorLanguage::CompletionOption option(struct_type.struct_keys[i], EditorLanguage::CompletionKind::MEMBER_VARIABLE);
+								options.insert(option.display, option);
+							}
+						}
+					} else {
+						_find_identifiers_in_base(base, false, true, true, options, 0);
+					}
 				}
 			}
 

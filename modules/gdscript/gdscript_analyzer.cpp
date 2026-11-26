@@ -2754,26 +2754,12 @@ GDScriptParser::DataType GDScriptAnalyzer::resolve_datatype(GDScriptParser::Type
 		return bad_type;
 	}
 
+	// `Foo.key`: the type of a key of a struct type (like `Foo["key"]` in TypeScript). Can be chained (`Foo.key.nested`).
+	// The struct type can also be qualified (`Inner.Foo.key`, `External.Foo.key`, `GlobalClass.Foo.key`):
+	// `struct_key_start` is the index of the first key in the type chain (0 when the chain has no struct keys).
+	uint32_t struct_key_start = 0;
 	if (p_type->type_chain.size() > 1 && type_from_metatype(result).is_struct_type()) {
-		// `Foo.key`: the type of a key of a struct type (like `Foo["key"]` in TypeScript). Can be chained (`Foo.key.nested`).
-		GDScriptParser::DataType key_type = type_from_metatype(result);
-		for (uint32_t i = 1; i < p_type->type_chain.size(); i++) {
-			const StringName key = p_type->type_chain[i]->name;
-			if (!key_type.is_struct_type()) {
-				push_error(vformat(R"(Cannot get the type of key "%s" because "%s" is not a struct type.)", key, key_type.to_string()), p_type->type_chain[i]);
-				return bad_type;
-			}
-			const int key_index = key_type.find_struct_key(key);
-			if (key_index < 0) {
-				push_error(vformat(R"(Key "%s" does not exist in struct type "%s".)", key, key_type.to_string()), p_type->type_chain[i]);
-				return bad_type;
-			}
-			key_type = key_type.struct_key_types[key_index];
-		}
-		key_type.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
-		key_type.is_constant = false;
-		key_type.is_read_only = false;
-		result = key_type;
+		struct_key_start = 1;
 	} else if (p_type->type_chain.size() > 1) {
 		if (result.kind == GDScriptParser::DataType::CLASS) {
 			for (uint32_t i = 1; i < p_type->type_chain.size(); i++) {
@@ -2781,11 +2767,16 @@ GDScriptParser::DataType GDScriptAnalyzer::resolve_datatype(GDScriptParser::Type
 				reduce_identifier_from_base(p_type->type_chain[i], &base);
 				result = p_type->type_chain[i]->type_constraint;
 				if (!result.is_set()) {
-					push_error(vformat(R"(Could not find type "%s" under base "%s".)", p_type->type_chain[i]->name, base.to_string()), p_type->type_chain[1]);
+					push_error(vformat(R"(Could not find type "%s" under base "%s".)", p_type->type_chain[i]->name, base.to_string()), p_type->type_chain[i]);
 					return bad_type;
 				} else if (!result.is_meta_type || !result.is_constant) {
-					push_error(vformat(R"(Member "%s" under base "%s" is not a valid type.)", p_type->type_chain[i]->name, base.to_string()), p_type->type_chain[1]);
+					push_error(vformat(R"(Member "%s" under base "%s" is not a valid type.)", p_type->type_chain[i]->name, base.to_string()), p_type->type_chain[i]);
 					return bad_type;
+				}
+				if (i + 1 < p_type->type_chain.size() && type_from_metatype(result).is_struct_type()) {
+					// `Inner.Foo.key`: the rest of the chain are keys of the struct type.
+					struct_key_start = i + 1;
+					break;
 				}
 			}
 		} else if (result.kind == GDScriptParser::DataType::NATIVE) {
@@ -2805,6 +2796,27 @@ GDScriptParser::DataType GDScriptAnalyzer::resolve_datatype(GDScriptParser::Type
 			push_error(vformat(R"(Could not find nested type "%s" under base "%s".)", p_type->type_chain[1]->name, result.to_string()), p_type->type_chain[1]);
 			return bad_type;
 		}
+	}
+
+	if (struct_key_start > 0) {
+		GDScriptParser::DataType key_type = type_from_metatype(result);
+		for (uint32_t i = struct_key_start; i < p_type->type_chain.size(); i++) {
+			const StringName key = p_type->type_chain[i]->name;
+			if (!key_type.is_struct_type()) {
+				push_error(vformat(R"(Cannot get the type of key "%s" because "%s" is not a struct type.)", key, key_type.to_string()), p_type->type_chain[i]);
+				return bad_type;
+			}
+			const int key_index = key_type.find_struct_key(key);
+			if (key_index < 0) {
+				push_error(vformat(R"(Key "%s" does not exist in struct type "%s".)", key, key_type.to_string()), p_type->type_chain[i]);
+				return bad_type;
+			}
+			key_type = key_type.struct_key_types[key_index];
+		}
+		key_type.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
+		key_type.is_constant = false;
+		key_type.is_read_only = false;
+		result = key_type;
 	}
 
 	if (p_type->is_callable_signature) {

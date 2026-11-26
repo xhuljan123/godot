@@ -127,6 +127,23 @@ var name: Foo = "Bob"
 var inner: Bar.inner = { x = 2.0 }
 ```
 
+The struct type can also be qualified by the class or script that declares it (an inner class, a preloaded script
+constant or a global class), so key types are reachable from the type directly, without a variable:
+
+```gdscript
+const External = preload("types.gd") # Declares `type Point = Struct[{ x: float, y: float }]`.
+
+class Types:
+	type Foo = Struct[{ key_1: int, key_2: String }]
+
+type A = Types.Foo.key_1 # int
+type B = Types.Foo.key_2 # String
+var x: External.Point.x = 1.5 # float
+```
+
+Typing `.` after the struct type in a type hint suggests its keys (also after a qualified struct type). A key that
+doesn't exist is reported on the key itself.
+
 #### Partial and Required
 
 - `Partial[StructType]` makes every key optional.
@@ -869,5 +886,5 @@ func _ready():
 
 - Syntax highlighting: `type` in type alias declarations uses the keyword color (like `var` and `func`). `Struct`, `Partial`, `Required`, `Omit`, `Pick`, `StructFromClass`, `ExtractExportableVars`, `StructToVariant`, `List`, `KeysOf`, `ValuesOf`, `DictionaryWithKeys`, `Record`, `NestedArray`, `NestedDictionary`, `FunctionArgType`, `ExtractArg`, `TypeOf` and `Infer` use the base type color when followed by `[`. `BoundCallable` uses the base type color.
 - Argument hints: `call()`, `call_deferred()` and `bind_strict()` on a callable with a known signature show its argument types.
-- Code completion: type names, struct keys (in literals, after `.`, in `Foo.` types), variables and members inside `TypeOf[...]`, parameters inside `Infer[...]`, `List`/`KeysOf`/`ValuesOf` values in assignments and call arguments, members after `?.`.
+- Code completion: type names, struct keys (in literals, after `.`, in `Foo.` and `Inner.Foo.` types), variables and members inside `TypeOf[...]`, parameters inside `Infer[...]`, `List`/`KeysOf`/`ValuesOf` values in assignments and call arguments, members after `?.`.
 - Hover tooltips, argument hints and the script documentation show the full types, including the aliased type of type aliases (`Foo (Struct[{ ... }])`), and `Infer[param]` as the return type of functions declared with it.

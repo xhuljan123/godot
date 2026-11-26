@@ -1,0 +1,5 @@
+GDTEST_ANALYZER_ERROR
+>> ERROR at line 6: Key "baz" does not exist in struct type "Foo".
+>> ERROR at line 7: Cannot get the type of key "baz" because "int" is not a struct type.
+>> ERROR at line 8: Key "z" does not exist in struct type "Point".
+>> ERROR at line 11: Cannot assign a value of type String to variable "a" with specified type int.
