@@ -76,9 +76,9 @@ func test():
 	print(p.x + p.y)
 	print(sum_points([{ x: 1.0, y: 2.0 }, make_point(3.0, 4.0)]))
 
-	# Struct types are exact: a struct with the same keys can be passed (extra keys are errors).
-	var same_keys: Struct[{ key2: int, key1: String }] = { key1: "big", key2: 5 }
-	foo(same_keys)
+	# Structural typing: extra keys are fine when assigning a struct variable.
+	var big: Struct[{ key1: String, key2: int, other: bool }] = { key1: "big", key2: 5, other: true }
+	foo(big)
 
 	# Constant structs.
 	const ORIGIN: Struct[{ x: float, y: float }] = { x: 0.0, y: 0.0 }

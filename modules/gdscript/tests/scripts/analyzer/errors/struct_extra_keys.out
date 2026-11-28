@@ -1,8 +1,0 @@
-GDTEST_ANALYZER_ERROR
->> ERROR at line 13: Cannot return value of type "User" because the function return type is "Small". Key "password" does not exist in "Small".
->> ERROR at line 20: Invalid argument for "bar()" function: argument 1 should be "Struct[{ key_1: int, key_2: int, key_3?: int }]" but is "Struct[{ key_1: int, key_2: int, key_3: int, key_4: int }]". Key "key_4" does not exist in "Struct[{ key_1: int, key_2: int, key_3?: int }]".
->> ERROR at line 22: Invalid argument for "bar()" function: argument 1 should be "Struct[{ key_1: int, key_2: int, key_3?: int }]" but is "WithOptional". Key "extra" does not exist in "Struct[{ key_1: int, key_2: int, key_3?: int }]".
->> ERROR at line 24: Invalid argument for "show()" function: argument 1 should be "PublicUser" but is "User". Key "password" does not exist in "PublicUser".
->> ERROR at line 25: Cannot assign a value of type User to variable "small" with specified type Small. Key "password" does not exist in "Small".
->> ERROR at line 26: Value of type "User" cannot be assigned to a variable of type "Small". Key "password" does not exist in "Small".
->> ERROR at line 28: Cannot assign a value of type Nested to variable "nested_target" with specified type NestedTarget. Key "inner" is "Struct[{ x: int, y: int }]" but should be "Struct[{ x: int }]".

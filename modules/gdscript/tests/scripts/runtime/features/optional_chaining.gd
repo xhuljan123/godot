@@ -1,5 +1,6 @@
-# Optional chaining: `a?.b`, `a?.method()` and `a?.[key]` give `null` (and skip the rest of the chain) when `a` is `null`.
-# `a?.[key]` also gives `null` when the key or index doesn't exist.
+# Optional chaining: `a?.b`, `a?.method()` and `a?.[key]` give `null` (and skip the rest of the chain) when `a` is `null`
+# (or a freed object). `a?.[key]` also gives `null` when a dictionary key or an array index doesn't exist at runtime.
+# Keys that a struct type doesn't have are still errors (see `analyzer/errors/optional_chaining_unknown_key.gd`).
 class Foo:
 	var value := 1
 	var child: Foo = null
@@ -59,7 +60,6 @@ func test():
 	print(user?.["name"])
 	print(user?.["age"])
 	print(user?.["role"])
-	print(user?.["email"])
 	print(user?.name)
 
 	var value: int = list?.["foo"]
@@ -81,3 +81,8 @@ func test():
 	var raw_inner: Dictionary = raw["inner"]
 	var _erased := raw_inner.erase("id")
 	print(data?.inner?.id)
+
+	# A freed object is skipped like `null`.
+	var freed := Node.new()
+	freed.free()
+	print(freed?.name)

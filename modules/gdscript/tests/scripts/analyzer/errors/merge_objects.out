@@ -8,12 +8,7 @@ GDTEST_ANALYZER_ERROR
 >> ERROR at line 15: Invalid argument for "mergeObjects()" function: argument 2 should be a struct but is "Variant". Use a struct type (like "Struct[{ key: Type }]") or "inferType()".
 >> ERROR at line 16: Invalid argument for "mergeObjects()" function: argument 1 should be a struct but is "Dictionary". A dictionary literal is a struct only if all its keys are names or constant strings.
 >> ERROR at line 17: Key "extra" does not exist in struct type "Config".
->> ERROR at line 17: Cannot assign a value of type Struct[{ name: String, size: int, extra: bool }] to variable "config_extra" with specified type Config. Key "extra" does not exist in "Config".
 >> ERROR at line 18: Key "colour" does not exist in struct type "Config".
->> ERROR at line 18: Value of type "Struct[{ name: String, size: int, colour: String }]" cannot be assigned to a variable of type "Config". Key "colour" does not exist in "Config".
 >> ERROR at line 20: Key "mp" does not exist in struct type "Struct[{ hp: int }]".
->> ERROR at line 20: Cannot assign a value of type Struct[{ hp: int, mp: int }] to variable "from_typed" with specified type Struct[{ hp: int }]. Key "mp" does not exist in "Struct[{ hp: int }]".
 >> ERROR at line 21: Key "other" does not exist in struct type "Config".
->> ERROR at line 21: Invalid argument for "take()" function: argument 1 should be "Config" but is "Struct[{ name: String, size: int, other: int }]". Key "other" does not exist in "Config".
 >> ERROR at line 24: Key "debug" does not exist in struct type "Config".
->> ERROR at line 24: Cannot return value of type "Struct[{ name: String, size: int, debug: bool }]" because the function return type is "Config". Key "debug" does not exist in "Config".

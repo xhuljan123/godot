@@ -1,0 +1,6 @@
+GDTEST_ANALYZER_ERROR
+>> ERROR at line 7: Key "levers" does not exist in struct type "User".
+>> ERROR at line 8: Key "email" does not exist in struct type "User".
+>> ERROR at line 9: Key "idd" does not exist in struct type "Struct[{ id: int }]".
+>> ERROR at line 11: Cannot find member "w" in base "Vector3".
+>> ERROR at line 11: Cannot find member "w" in base "Vector3".

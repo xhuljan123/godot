@@ -80,16 +80,16 @@ func _ready():
 	var unknown: Foo = { test = "a", size = 2 } # Error: key "size" does not exist.
 ```
 
-- Struct types are exact: a struct with a key (required or optional) that the expected type doesn't have can't be passed as an argument, assigned or returned. Missing optional keys are fine. Untyped dictionaries with unknown keys are rejected at runtime, when passed as a struct argument.
+- A struct with more keys can be passed, assigned or returned where a struct with fewer keys is expected (structural typing). A dictionary literal with a key the struct type doesn't have is still an error, so typos are caught.
 
 ```gdscript
-func bar(arg: Struct[{ key_1: int, key_2: int, key_3?: int }]):
+func bar(arg: Struct[{ key_1: int, key_2?: int }]):
 	pass
 
 func _ready():
-	var foo: Struct[{ key_1: int, key_2: int, key_3: int, key_4: int }] = { key_1 = 1, key_2 = 2, key_3 = 3, key_4 = 4 }
-	bar(foo) # Error: Key "key_4" does not exist in "Struct[{ key_1: int, key_2: int, key_3?: int }]".
-	bar({ key_1 = foo.key_1, key_2 = foo.key_2 }) # OK.
+	var foo: Struct[{ key_1: int, key_2: int, key_3: int }] = { key_1 = 1, key_2 = 2, key_3 = 3 }
+	bar(foo) # OK: key_3 is ignored.
+	bar({ key_1 = 1, key_3 = 3 }) # Error: key "key_3" does not exist.
 ```
 
 - Default values must be constant expressions. Array and dictionary defaults are copied on each read.
@@ -703,7 +703,17 @@ var nested: Dictionary = {}
 print(nested?.bar?.test) # null: each `?.` link gives null for a missing key.
 ```
 
-A `?.` link gives `null` for a missing key even when the key is a required key of a struct type (struct values are plain dictionaries at runtime, so one can still miss a key).
+`?.` only skips a `null` value: what doesn't exist is still an error, like with `.`.
+
+```gdscript
+print(user?.email) # Error: Key "email" does not exist in struct type "Struct[{ ... }]".
+print(user?.["email"]) # Error: same.
+print(Vector3.ZERO?.w) # Error: Cannot find member "w" in base "Vector3".
+print(node_ref?.missing) # Runtime error if node_ref isn't null, like `node_ref.missing`.
+print(node_ref?.missing()) # Runtime error if node_ref isn't null, like `node_ref.missing()`.
+```
+
+A `?.` link gives `null` for a missing key of a dictionary at runtime, even when the key is a required key of a struct type (struct values are plain dictionaries at runtime, so one can still miss a key).
 
 `?.` can't be used in an assignment target. A chain that can give `null` is typed as a weak type, so assigning it to a typed variable is checked at runtime.
 

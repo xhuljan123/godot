@@ -1,0 +1,3 @@
+GDTEST_RUNTIME_ERROR
+1
+>> SCRIPT ERROR at runtime/errors/optional_chaining_unknown_member.gd:9 on test(): Invalid access to property or key 'missing' on a base object of type 'RefCounted (Foo)'.

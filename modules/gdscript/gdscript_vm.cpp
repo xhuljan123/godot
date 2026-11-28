@@ -1231,12 +1231,31 @@ Variant GDScriptFunction::call(GDScriptInstance *p_instance, const Variant **p_a
 				GET_VARIANT_PTR(index, 1);
 				GET_VARIANT_PTR(dst, 2);
 
-				// Optional chaining (`base?.[key]`, `base?.name`): a missing key, an out of bounds index or a `null` base give `null`.
+				// Optional chaining (`base?.[key]`, `base?.name`): a `null` (or freed) base gives `null`, and so does a missing
+				// key or an out of bounds index of a dictionary or array. A member that a (valid) object doesn't have is an
+				// error, like with `base.name`.
 				bool valid = false;
 				Variant ret;
-				if (src->get_type() != Variant::NIL) {
+				bool is_null = src->get_type() == Variant::NIL;
+				if (src->get_type() == Variant::OBJECT) {
+					bool was_freed = false;
+					is_null = src->get_validated_object_with_check(was_freed) == nullptr;
+				}
+				if (!is_null) {
 					ret = src->get(*index, &valid);
 				}
+#ifdef DEBUG_ENABLED
+				if (!valid && !is_null && src->get_type() == Variant::OBJECT) {
+					String v = index->operator String();
+					if (!v.is_empty()) {
+						v = "'" + v + "'";
+					} else {
+						v = "of type '" + _get_var_type(index) + "'";
+					}
+					err_text = "Invalid access to property or key " + v + " on a base object of type '" + _get_var_type(src) + "'.";
+					OPCODE_BREAK;
+				}
+#endif
 				if (valid) {
 					*dst = ret;
 				} else {

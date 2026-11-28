@@ -2402,6 +2402,7 @@ GDScriptParser::DataType GDScriptAnalyzer::resolve_datatype(GDScriptParser::Type
 			result.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
 			result.is_constant = false;
 			result.is_read_only = false;
+			result.struct_is_exact = false;
 			for (int i = 0; i < result.struct_key_types.size(); i++) {
 				result.struct_key_types.write[i] = variant_type;
 			}
@@ -2428,6 +2429,7 @@ GDScriptParser::DataType GDScriptAnalyzer::resolve_datatype(GDScriptParser::Type
 			result.is_read_only = false;
 			result.clear_struct();
 			result.is_struct = true; // Even if no key is picked (`Struct[{}]`).
+			result.struct_is_exact = argument_type.struct_is_exact;
 			for (int i = 0; i < argument_type.struct_keys.size(); i++) {
 				if (!picked.has(argument_type.struct_keys[i])) {
 					continue;
@@ -2457,6 +2459,7 @@ GDScriptParser::DataType GDScriptAnalyzer::resolve_datatype(GDScriptParser::Type
 			result.is_read_only = false;
 			result.clear_struct();
 			result.is_struct = true; // Even if every key is omitted (`Struct[{}]`).
+			result.struct_is_exact = argument_type.struct_is_exact;
 			for (int i = 0; i < argument_type.struct_keys.size(); i++) {
 				if (omitted.has(argument_type.struct_keys[i])) {
 					continue;
@@ -2479,6 +2482,7 @@ GDScriptParser::DataType GDScriptAnalyzer::resolve_datatype(GDScriptParser::Type
 			result.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
 			result.is_constant = false;
 			result.is_read_only = false;
+			result.struct_is_exact = false;
 
 			Vector<bool> is_excluded;
 			is_excluded.resize(result.struct_keys.size());
@@ -6017,14 +6021,11 @@ bool GDScriptAnalyzer::is_struct_compatible(const GDScriptParser::DataType &p_ta
 			return false;
 		}
 	}
-	// Struct types are exact: the source can't have keys (required or optional) that the target doesn't have,
-	// for arguments, assignments and return values alike. The runtime check (`GDScriptDataType::validate_struct()`)
-	// rejects unknown keys too.
-	if (p_target.is_struct_type()) {
+	if (p_target.struct_is_exact) {
 		for (int i = 0; i < p_source.struct_keys.size(); i++) {
 			if (p_target.find_struct_key_value(p_source.get_struct_key_value(i)) < 0) {
 				if (r_reason) {
-					*r_reason = vformat(R"(Key %s does not exist in "%s".)", p_source.get_struct_key_text(i), p_target.to_string());
+					*r_reason = vformat(R"(Key "%s" does not exist in the target type.)", p_source.struct_keys[i]);
 				}
 				return false;
 			}
@@ -8420,9 +8421,8 @@ void GDScriptAnalyzer::reduce_subscript(GDScriptParser::SubscriptNode *p_subscri
 				result_type = get_struct_key_read_type(base_type, key_index);
 				p_subscript->attribute->type_constraint = result_type;
 			} else {
-				if (!p_subscript->is_optional) { // `value?.key` gives `null` for an unknown key.
-					push_error(vformat(R"(Key "%s" does not exist in struct type "%s".)", p_subscript->attribute->name, base_type.to_string()), p_subscript->attribute);
-				}
+				// Also with `value?.key`: optional chaining only skips a `null` value, the key must exist.
+				push_error(vformat(R"(Key "%s" does not exist in struct type "%s".)", p_subscript->attribute->name, base_type.to_string()), p_subscript->attribute);
 				valid = true; // Avoid a second error.
 				result_type.kind = GDScriptParser::DataType::VARIANT;
 			}
@@ -8477,12 +8477,7 @@ void GDScriptAnalyzer::reduce_subscript(GDScriptParser::SubscriptNode *p_subscri
 			}
 		}
 
-		if (!valid && p_subscript->is_optional && !base_type.is_meta_type) {
-			// `value?.member`: an unknown member (or dictionary key) gives `null` at runtime.
-			valid = true;
-			result_type = GDScriptParser::DataType();
-			result_type.kind = GDScriptParser::DataType::VARIANT;
-		}
+		// `value?.member` is checked like `value.member`: optional chaining only skips a `null` value.
 		if (!valid) {
 			GDScriptParser::DataType attr_type = p_subscript->attribute->type_constraint;
 			if (!p_can_be_pseudo_type && (attr_type.is_pseudo_type || result_type.is_pseudo_type)) {
@@ -8539,9 +8534,8 @@ void GDScriptAnalyzer::reduce_subscript(GDScriptParser::SubscriptNode *p_subscri
 				if (key_index >= 0) {
 					result_type = get_struct_key_read_type(base_type, key_index);
 				} else {
-					if (!p_subscript->is_optional) { // `value?.["key"]` gives `null` for an unknown key.
-						push_error(vformat(R"(Key "%s" does not exist in struct type "%s".)", key, base_type.to_string()), p_subscript->index);
-					}
+					// Also with `value?.["key"]`: optional chaining only skips a `null` value, the key must exist.
+					push_error(vformat(R"(Key "%s" does not exist in struct type "%s".)", key, base_type.to_string()), p_subscript->index);
 					result_type.kind = GDScriptParser::DataType::VARIANT;
 				}
 			} else if (base_type.is_struct_type() && base_type.has_int_struct_keys() && p_subscript->index->is_constant && p_subscript->index->reduced_value.get_type() == Variant::INT) {
@@ -8550,9 +8544,7 @@ void GDScriptAnalyzer::reduce_subscript(GDScriptParser::SubscriptNode *p_subscri
 				if (key_index >= 0) {
 					result_type = get_struct_key_read_type(base_type, key_index);
 				} else {
-					if (!p_subscript->is_optional) {
-						push_error(vformat(R"(Key %s does not exist in struct type "%s".)", p_subscript->index->reduced_value.get_construct_string(), base_type.to_string()), p_subscript->index);
-					}
+					push_error(vformat(R"(Key %s does not exist in struct type "%s".)", p_subscript->index->reduced_value.get_construct_string(), base_type.to_string()), p_subscript->index);
 					result_type.kind = GDScriptParser::DataType::VARIANT;
 				}
 			} else if (base_type.is_struct_type() && index_type.is_hard_type() && ((index_type.is_value_list_type() && ((index_type.kind == GDScriptParser::DataType::BUILTIN && index_type.builtin_type == Variant::STRING) || base_type.has_int_struct_keys())) || (index_type.kind == GDScriptParser::DataType::ENUM && !index_type.is_meta_type && base_type.has_int_struct_keys()))) {
@@ -9773,6 +9765,8 @@ bool GDScriptAnalyzer::get_function_signature(GDScriptParser::Node *p_source, bo
 				has_required_keys = true;
 			}
 		}
+		// Unknown keys are runtime errors, so a struct with keys the class doesn't have is rejected statically too.
+		struct_type.struct_is_exact = struct_type.is_struct_type();
 		if (p_is_constructor) {
 			r_return_type = p_base_type;
 			r_return_type.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
